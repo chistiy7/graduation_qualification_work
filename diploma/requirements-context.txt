@@ -1,0 +1,2 @@
+# Зависимости сервиса context_service (отдельно от md_to_docx)
+faster-whisper>=1.1.0

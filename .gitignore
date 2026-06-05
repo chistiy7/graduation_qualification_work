@@ -1,0 +1,23 @@
+.DS_Store
+~$*
+
+# Build artifacts
+build/
+*.o
+*.obj
+*.exe
+compile_commands.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# IDE / tooling cache
+.vscode/
+.cache/
+
+# Raw audio captures (processed into sessions/)
+*.m4a
+*.wav
+*.mp3
