@@ -1,6 +1,8 @@
 #include "engine/route_analysis.hpp"
 
+#include "domain/changeover_matrix.hpp"
 #include "domain/physics_constants.hpp"
+#include "domain/stand_catalog.hpp"
 #include "domain/test_stage.hpp"
 
 #include <optional>
@@ -43,6 +45,7 @@ RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
     const auto& steps = route.steps();
 
     std::unordered_map<std::string, std::optional<std::string>> lastModeOnEquipment;
+    std::unordered_map<std::string, std::optional<TestOperationType>> lastTypeOnEquipment;
     std::unordered_map<std::string, double> testMinByEquipment;
     std::unordered_map<std::string, double> setupMinByEquipment;
 
@@ -52,31 +55,55 @@ RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
             throw std::runtime_error("unknown equipment in route: " + step.equipmentId);
         }
 
-        bool needsSetup = true;
-        if (auto it = lastModeOnEquipment.find(equipment->id);
-            it != lastModeOnEquipment.end() && it->second.has_value()) {
-            needsSetup = it->second.value() != step.operationId;
+        const auto* op = findOperation(problem, step.operationId);
+        const bool universal = equipment->standType == StandType::UniversalAxialTorsion;
+
+        auto modeIt = lastModeOnEquipment.find(equipment->id);
+        const bool firstUse =
+            modeIt == lastModeOnEquipment.end() || !modeIt->second.has_value();
+        const bool programChanged =
+            !firstUse && modeIt->second.value() != step.operationId;
+        // Событие переналадки N — первичная установка или смена ПРОГРАММЫ. Чистая
+        // смена образца (та же программа на универсальном стенде) в N не входит, но
+        // занимает время/энергию по матрице переходов.
+        const bool isChangeover = firstUse || programChanged;
+
+        // Время фазы настройки/перезагрузки стенда.
+        double tSetup = 0.0;
+        if (universal) {
+            if (firstUse) {
+                tSetup = setupTimeMin(*equipment, op);  // первичная установка из техкарты
+            } else {
+                const auto typeIt = lastTypeOnEquipment.find(equipment->id);
+                const TestOperationType prevType = typeIt->second.value();
+                const TestOperationType curType = op ? op->operationType : prevType;
+                tSetup = changeoverTimeMin(prevType, curType);  // переход или смена образца
+            }
+        } else if (isChangeover) {
+            tSetup = setupTimeMin(*equipment, op);  // обычный стенд — только при смене программы
         }
 
-        if (needsSetup) {
-            const auto* op = findOperation(problem, step.operationId);
-            const double tSetup = setupTimeMin(*equipment, op);
-            const double pSetup = setupPowerKw(*equipment, op);
-
+        // N и фиксированная плата за переналадку — только на реальном переходе программы.
+        if (isChangeover) {
             ++out.setupCount;
-            out.setupTimeMin += tSetup;
             out.setupCost += equipment->setupCost;
-            setupMinByEquipment[equipment->id] += tSetup;
             out.setupCostByEquipment[equipment->id] += equipment->setupCost;
+        }
+
+        // Время и энергия фазы настройки/перезагрузки (универсальный стенд — каждый шаг).
+        if (tSetup > 0.0) {
+            out.setupTimeMin += tSetup;
+            setupMinByEquipment[equipment->id] += tSetup;
             out.busyMinutesByEquipment[equipment->id] += tSetup;
 
+            const double pSetup = setupPowerKw(*equipment, op);
             if (problem.electricityTariffPerKwh > 0.0 && pSetup > 0.0) {
                 const double kwh = pSetup * (tSetup / 60.0);
                 out.energySetupCost += kwh * problem.electricityTariffPerKwh;
             }
         }
 
-        if (const auto* op = findOperation(problem, step.operationId)) {
+        if (op) {
             const double busy =
                 op->cycleTimeMin > 0.0 ? op->cycleTimeMin : op->durationMin;
             testMinByEquipment[equipment->id] += busy;
@@ -84,6 +111,7 @@ RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
         }
 
         lastModeOnEquipment[equipment->id] = step.operationId;
+        if (op) lastTypeOnEquipment[equipment->id] = op->operationType;
     }
 
     for (size_t i = 1; i < steps.size(); ++i) {

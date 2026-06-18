@@ -22,7 +22,11 @@ struct TestStage {
     double cycleTimeMin = 0.0;       // = t_program (занятость стенда на операцию)
     double modePowerKw = 0.0;        // P_work — мощность в рабочем режиме программы
     double setupPowerKw = 0.0;       // P_setup — мощность при переналадке программы
-    double programSetupTimeMin = 0.0; // t_setup из техкарты программы
+    // Фазовая модель операции: настройка (programSetupTimeMin / матрица переналадки) →
+    // прогон (cycleTimeMin, автономно для оператора в DES-ядре, фаза 3) →
+    // снятие (unloadTimeMin, оператор освобождает стенд).
+    double programSetupTimeMin = 0.0; // t_setup — фаза настройки из техкарты, мин
+    double unloadTimeMin = 0.0;       // t_unload — фаза снятия образца оператором, мин
     bool deformationEnergyUsed = false;
     double costOp = 0.0;
     // C_энерг = modePowerKw · t_program / 60 · тариф; W — только контроль.

@@ -97,6 +97,7 @@ bool testSetupOnModeChange() {
     lab::ProblemDefinition p;
     lab::LabEquipment eq;
     eq.id = "e_mock";
+    eq.standType = lab::StandType::CompressionStand;  // одно-программный стенд (общий путь)
     eq.setupTimeMin = 10.0;
     eq.setupCost = 100.0;
     p.equipment.push_back(eq);
@@ -148,6 +149,66 @@ bool testSetupOnModeChange() {
     return ok;
 }
 
+bool testUniversalStandChangeover() {
+    // Универсальный осевой-крутильный стенд: матрица переналадки A→B.
+    // Группировка одинаковых программ должна давать меньшее суммарное время
+    // переналадок, чем чередование (при одинаковом числе переналадок).
+    lab::ProblemDefinition p;
+    lab::LabEquipment eq;
+    eq.id = "e_axial_torsion";
+    eq.standType = lab::StandType::UniversalAxialTorsion;
+    eq.setupTimeMin = 10.0;
+    p.equipment.push_back(eq);
+
+    lab::TestStage tension;
+    tension.id = "tension";
+    tension.operationType = lab::TestOperationType::Tension;
+    tension.durationMin = 20.0;
+    tension.programSetupTimeMin = 10.0;
+    lab::TestStage torsion;
+    torsion.id = "torsion";
+    torsion.operationType = lab::TestOperationType::Torsion;
+    torsion.durationMin = 15.0;
+    torsion.programSetupTimeMin = 10.0;
+    p.operations = {tension, torsion};
+
+    lab::TestRoute grouped;  // T T K K — группировка
+    grouped.addStep({"s1", "tension", "e_axial_torsion"});
+    grouped.addStep({"s2", "tension", "e_axial_torsion"});
+    grouped.addStep({"s3", "torsion", "e_axial_torsion"});
+    grouped.addStep({"s4", "torsion", "e_axial_torsion"});
+
+    lab::TestRoute interleaved;  // T K T K — чередование
+    interleaved.addStep({"s1", "tension", "e_axial_torsion"});
+    interleaved.addStep({"s2", "torsion", "e_axial_torsion"});
+    interleaved.addStep({"s3", "tension", "e_axial_torsion"});
+    interleaved.addStep({"s4", "torsion", "e_axial_torsion"});
+
+    const auto aGrouped = lab::RouteAnalyzer{}.analyze(p, grouped);
+    const auto aInter = lab::RouteAnalyzer{}.analyze(p, interleaved);
+    const auto mGrouped = lab::StandStateAnalyzer{}.analyze(p, grouped);
+
+    bool ok = true;
+    // N (переналадки) считает первичную установку + смену программы. Чистая смена
+    // образца (та же программа) в N не входит, но занимает время по матрице.
+    ok &= aGrouped.setupCount == 2;   // установка T + переход T→K
+    ok &= aInter.setupCount == 4;     // установка T + T→K + K→T + T→K
+    ok &= mGrouped.setupCount == aGrouped.setupCount;
+    // grouped время: 10 + 12(T→T) + 25(T→K) + 12(K→K) = 59
+    ok &= std::abs(aGrouped.setupTimeMin - 59.0) < 1e-6;
+    // interleaved время: 10 + 25 + 25 + 25 = 85
+    ok &= std::abs(aInter.setupTimeMin - 85.0) < 1e-6;
+    ok &= aGrouped.setupTimeMin < aInter.setupTimeMin;
+    // Группировка снижает и число переналадок, и фиксированную плату C_setup.
+    ok &= aGrouped.setupCount < aInter.setupCount;
+    if (!ok) {
+        std::cerr << "Universal changeover FAILED: grouped t=" << aGrouped.setupTimeMin
+                  << " N=" << aGrouped.setupCount << " interleaved t=" << aInter.setupTimeMin
+                  << " N=" << aInter.setupCount << "\n";
+    }
+    return ok;
+}
+
 bool testCycleTimeAndUtilization() {
     lab::ProblemDefinition p;
     p.gridCellSizeM = 2.0;
@@ -155,10 +216,12 @@ bool testCycleTimeAndUtilization() {
 
     lab::LabEquipment fast;
     fast.id = "e_tension";
+    fast.standType = lab::StandType::CompressionStand;  // одно-программный стенд
     fast.amortPerHour = 1000.0;
     fast.fundTimeMin = 480.0;
     lab::LabEquipment slow;
     slow.id = "e_thermo_mech";
+    slow.standType = lab::StandType::ThermomechanicalStand;
     slow.amortPerHour = 2000.0;
     slow.fundTimeMin = 480.0;
     p.equipment = {fast, slow};
@@ -435,6 +498,8 @@ int main() {
     std::cout << "Pipeline layout for user input OK\n";
     if (!testSetupOnModeChange()) return EXIT_FAILURE;
     std::cout << "Setup mode-change OK\n";
+    if (!testUniversalStandChangeover()) return EXIT_FAILURE;
+    std::cout << "Universal stand changeover matrix OK\n";
     if (!testCycleTimeAndUtilization()) return EXIT_FAILURE;
     std::cout << "Cycle time and utilization OK\n";
     if (!testValidIndependentSpecimens()) return EXIT_FAILURE;

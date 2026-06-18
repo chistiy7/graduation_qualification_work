@@ -105,6 +105,11 @@ TestStage buildStageFromProgram(TestOperationType type, const LabConfigOverrides
     stage.modePowerKw = program.modePowerKw;
     stage.setupPowerKw = program.setupPowerKw;
     stage.programSetupTimeMin = program.setupTimeMin;
+    // Фаза снятия образца (оператор освобождает стенд после прогона). Зависит от
+    // сложности оснастки: комбинированные/термические программы дольше разбирать.
+    stage.unloadTimeMin = stage.kind == TestKind::Combined ? 8.0
+                          : stage.kind == TestKind::Thermal ? 10.0
+                                                            : 5.0;
     stage.deformationEnergyUsed = program.deformationEnergyUsed;
     stage.sigmaMpa = program.sigmaMpa;
     stage.deltaT_C = program.deltaT_C;
