@@ -5,6 +5,7 @@
 #include "engine/program_efficiency.hpp"
 #include "engine/route_analysis.hpp"
 #include "engine/route_planner.hpp"
+#include "engine/scheduler.hpp"
 #include "engine/stand_state_matrix.hpp"
 #include "app/preprocessor.hpp"
 #include "domain/laboratory.hpp"
@@ -206,6 +207,114 @@ bool testUniversalStandChangeover() {
                   << " N=" << aGrouped.setupCount << " interleaved t=" << aInter.setupTimeMin
                   << " N=" << aInter.setupCount << "\n";
     }
+    return ok;
+}
+
+bool testSchedulerAutonomousOverlap() {
+    // DES-ядро: один оператор, автономный прогон. Пока на стенде A идёт длинный
+    // прогон, оператор обслуживает короткие операции на стенде B → makespan меньше
+    // последовательной суммы фаз.
+    lab::ProblemDefinition p;
+    lab::LabEquipment a;
+    a.id = "e_fatigue";
+    a.standType = lab::StandType::FatigueStand;
+    lab::LabEquipment b;
+    b.id = "e_bending";
+    b.standType = lab::StandType::BendingRig;
+    p.equipment = {a, b};
+
+    lab::TestStage longRun;
+    longRun.id = "fatigue";
+    longRun.operationType = lab::TestOperationType::Fatigue;
+    longRun.durationMin = 100.0;
+    longRun.programSetupTimeMin = 5.0;
+    longRun.unloadTimeMin = 5.0;
+    lab::TestStage shortRun;
+    shortRun.id = "bending";
+    shortRun.operationType = lab::TestOperationType::Bending;
+    shortRun.durationMin = 10.0;
+    shortRun.programSetupTimeMin = 5.0;
+    shortRun.unloadTimeMin = 5.0;
+    p.operations = {longRun, shortRun};
+
+    lab::TestRoute order;
+    order.addStep({"s1", "fatigue", "e_fatigue"});
+    order.addStep({"s2", "bending", "e_bending"});
+    order.addStep({"s3", "bending", "e_bending"});
+
+    const auto sched = lab::Scheduler{}.build(p, order);
+
+    // Последовательная сумма фаз (без перекрытия):
+    // A: 5+100+5=110, B1: 5+10+5=20, B2: 5+10+5=20 → 150.
+    const double serialSum = 150.0;
+
+    bool ok = true;
+    ok &= sched.makespanMin > 0.0;
+    ok &= sched.makespanMin < serialSum;     // перекрытие реально сократило цикл
+    ok &= sched.operatorIdleMin >= 0.0;
+    // N=2: первичная установка усталостного + первичная установка изгиба; повторный
+    // изгиб (s3) — смена образца (та же программа), в N не входит.
+    ok &= sched.changeoverCount == 2;
+
+    // Инвариант: фазы оператора (Setup/Unload) не пересекаются между собой.
+    std::vector<const lab::ScheduledPhase*> opPhases;
+    for (const auto& ph : sched.phases) {
+        if (ph.operatorBusy) opPhases.push_back(&ph);
+    }
+    std::sort(opPhases.begin(), opPhases.end(),
+              [](const auto* x, const auto* y) { return x->startMin < y->startMin; });
+    for (size_t i = 1; i < opPhases.size(); ++i) {
+        if (opPhases[i]->startMin + 1e-9 < opPhases[i - 1]->endMin) ok = false;
+    }
+
+    // Инвариант: на каждом стенде прогоны не пересекаются, фазы упорядочены.
+    for (const auto& ph : sched.phases) {
+        if (ph.phase == lab::SchedulePhase::Run) ok &= ph.endMin > ph.startMin;
+    }
+
+    if (!ok) {
+        std::cerr << "Scheduler overlap FAILED: makespan=" << sched.makespanMin
+                  << " serial=" << serialSum << " opBusy=" << sched.operatorBusyMin
+                  << " N=" << sched.changeoverCount << "\n";
+    }
+    return ok;
+}
+
+bool testSchedulerSameStandSerialized() {
+    // Две операции на ОДНОМ стенде: прогоны не перекрываются (стенд — один ресурс).
+    lab::ProblemDefinition p;
+    lab::LabEquipment a;
+    a.id = "e_bending";
+    a.standType = lab::StandType::BendingRig;
+    p.equipment = {a};
+
+    lab::TestStage bending;
+    bending.id = "bending";
+    bending.operationType = lab::TestOperationType::Bending;
+    bending.durationMin = 20.0;
+    bending.programSetupTimeMin = 5.0;
+    bending.unloadTimeMin = 5.0;
+    p.operations = {bending};
+
+    lab::TestRoute order;
+    order.addStep({"s1", "bending", "e_bending"});
+    order.addStep({"s2", "bending", "e_bending"});
+
+    const auto sched = lab::Scheduler{}.build(p, order);
+
+    std::vector<const lab::ScheduledPhase*> runs;
+    for (const auto& ph : sched.phases) {
+        if (ph.phase == lab::SchedulePhase::Run) runs.push_back(&ph);
+    }
+    bool ok = runs.size() == 2;
+    if (ok) {
+        const lab::ScheduledPhase* first = runs[0]->startMin <= runs[1]->startMin ? runs[0] : runs[1];
+        const lab::ScheduledPhase* second = first == runs[0] ? runs[1] : runs[0];
+        ok &= second->startMin + 1e-9 >= first->endMin;  // второй прогон после первого
+        // на одном стенде N=1: одна первичная установка, дальше смена образца (та же программа)
+        ok &= sched.changeoverCount == 1;
+    }
+    if (!ok) std::cerr << "Scheduler same-stand serialization FAILED\n";
     return ok;
 }
 
@@ -500,6 +609,10 @@ int main() {
     std::cout << "Setup mode-change OK\n";
     if (!testUniversalStandChangeover()) return EXIT_FAILURE;
     std::cout << "Universal stand changeover matrix OK\n";
+    if (!testSchedulerAutonomousOverlap()) return EXIT_FAILURE;
+    std::cout << "Scheduler autonomous overlap OK\n";
+    if (!testSchedulerSameStandSerialized()) return EXIT_FAILURE;
+    std::cout << "Scheduler same-stand serialization OK\n";
     if (!testCycleTimeAndUtilization()) return EXIT_FAILURE;
     std::cout << "Cycle time and utilization OK\n";
     if (!testValidIndependentSpecimens()) return EXIT_FAILURE;
