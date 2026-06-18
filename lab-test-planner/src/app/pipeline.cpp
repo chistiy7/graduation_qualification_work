@@ -34,7 +34,8 @@ PipelineOutput Pipeline::run(ScenarioBundle bundle, bool exportFiles) const {
         out.csvPath = postprocessor_.exportCsv(out.result);
     }
 
-    printRunTimeMs(timer.elapsedMs());
+    out.elapsedMs = timer.elapsedMs();
+    printRunTimeMs(out.elapsedMs);
     return out;
 }
 

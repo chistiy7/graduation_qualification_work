@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 
 namespace lab {
@@ -49,6 +50,19 @@ int gridColsFromInput(const ScenarioInput& in) {
     const int n = gridCellCount(in);
     const int rows = gridRowsFromInput(in);
     return std::max(1, (n + rows - 1) / rows);
+}
+
+std::string formatGridSetupNote(const ScenarioInput& in) {
+    const int rows = gridRowsFromInput(in);
+    const int cols = gridColsFromInput(in);
+    std::ostringstream ss;
+    ss << "Сетка помещения: " << rows << " × " << cols << " = " << rows * cols
+       << " ячеек (модуль " << in.cellSizeM << "×" << in.cellSizeM << " м, стенд = 1 ячейка).\n"
+       << "Зоны безопасности: DirectionalBuffer (front/back/side) из stand_catalog по §2.2 "
+          "(ГОСТ 12.2.061-81 и др.), с учётом ориентации стенда.\n"
+       << "  механические стенды: front=1, back=0 у стены, side=1;\n"
+       << "  усталость: {2,2,1}; термомеханика: {2,1,2}. На карте — клетки X (Buffer).\n";
+    return ss.str();
 }
 
 const std::vector<TestOperationType>& selectableTestTypes() {

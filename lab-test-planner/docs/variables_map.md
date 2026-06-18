@@ -137,18 +137,33 @@
 
 ---
 
-## Вход CLI (`ScenarioInput`)
+## Вход CLI / GUI (`ScenarioInput`)
 
 | Параметр | Поле | Примечание |
 |---|---|---|
 | Площадь помещения | `roomAreaM2` | → число ячеек сетки |
-| Размер ячейки | `cellSizeM` | 2 м |
+| Размер ячейки | `cellSizeM` | 2 м (зашито в CLI/GUI) |
 | Партия | `batchSize` | = Σ `SpecimenGroup::count` |
 | Группы | `groups[]` | `{count, testType}` — один тип на группу |
 | V образца | `specimenVolumeM3` | для C_energy |
 | c_lab, тариф | `laborRatePerHour`, `energyTariffPerKwh` | |
 
-Сборка: `buildFromInput` → `optimizeLayout` → `LabOptimiser::plan` → `MetricsEngine::compute`.
+Сборка: `Pipeline::runFromInput` → `buildFromInput` → `optimizeLayout` → `LabOptimiser::plan`.
+
+---
+
+## Qt GUI — отображение (`PipelineOutput`)
+
+| Вкладка GUI | Источник в ядре |
+|---|---|
+| Сводка | `PlanResult::metrics`, `efficiency`, `orderingNote`, `energyWarnings` |
+| Стоимость | `CostBreakdown` |
+| Стенды | `equipmentStats` |
+| Маршрут | `TestRoute::steps()` |
+| Планировка | `ProblemDefinition::laboratory` + `LayoutGridWidget`; stats из `layout_area` |
+| Полный отчёт | `formatScenarioRunOutput()` (= CLI) |
+
+Файлы: `src/qt/mainwindow.cpp`, `pages/input_page.cpp`, `pages/results_page.cpp`, `widgets/layout_grid_widget.cpp`.
 
 ---
 
@@ -171,6 +186,6 @@
 |---|---|---|
 | Нормировка K с базой 0 | в ПО нет парного отчёта «вариант 0/1» | эталон задаётся вручную при сравнении |
 | `t_prep(s)` по типу испытания | константа 10 мин | можно дифференцировать по `TestOperationType` |
-| Буфер в оптимизаторе | упрощённо 1 ячейка Чебышёва | в каталоге — направленный буфер по ГОСТ |
+| Буфер в оптимизаторе | `DirectionalBuffer` front/back/side из `stand_catalog` (§2.2, ГОСТ) | не равномерный «1 ячейка»; см. `inForbiddenZone` |
 | `cellPlacementCost` | не в C | удалить поле или использовать явно |
-| §3.7 в дипломе | архитектура в `architecture.md` | синхронизировать с чистовой гл. 3 |
+| §3.7 в дипломе | архитектура в `architecture.md`, UML в `uml_current.md` | синхронизировано с Qt GUI |

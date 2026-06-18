@@ -18,6 +18,7 @@ struct PipelineOutput {
     std::filesystem::path csvPath;
     std::string layoutNote;
     long long layoutEvaluated = 0;
+    double elapsedMs = -1.0;
 };
 
 // Связка: размещение (если нужно) → препроцессор → ядро → постпроцессор

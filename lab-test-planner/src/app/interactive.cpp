@@ -1,8 +1,6 @@
 #include "app/interactive.hpp"
 
-#include "app/pipeline.hpp"
-#include "engine/lab_optimiser.hpp"
-#include "engine/layout_map.hpp"
+#include "app/scenario_runner.hpp"
 #include "model/scenario_input.hpp"
 
 #include <iostream>
@@ -196,25 +194,10 @@ int runInteractive() {
     in.groups = askSpecimenGroups(in.batchSize);
 
     try {
-        const int rows = gridRowsFromInput(in);
-        const int cols = gridColsFromInput(in);
-        const int cells = rows * cols;
-        std::cout << "\nСетка помещения: " << rows << " × " << cols << " = " << cells
-                  << " ячеек (ячейка 2×2 м, стенд = 1 ячейка).\n";
-        std::cout << "Запретная зона вокруг каждого стенда: 1 ячейка.\n";
+        std::cout << formatGridSetupNote(in) << "\n";
 
-        Pipeline pipeline;
-        const auto out = pipeline.runFromInput(in);
-
-        std::cout << "\n" << LabOptimiser::formatReport(out.result, out.bundle.problem);
-        if (out.layoutEvaluated > 0) {
-            std::cout << "\nРазмещение: " << out.layoutNote << " (вариантов просмотрено: "
-                      << out.layoutEvaluated << ")\n";
-        }
-        std::cout << "\n"
-                  << renderLayoutMatrix(out.bundle.problem, out.result.route,
-                                        out.result.metrics.T_cycle);
-        std::cout << "\nОтчёт: " << out.reportPath << "\nCSV: " << out.csvPath << "\n";
+        const auto out = runUserScenario(in);
+        std::cout << "\n" << formatScenarioRunOutput(out, &in);
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "\nОшибка: " << ex.what() << "\n";

@@ -39,6 +39,9 @@ struct ScenarioInput {
 [[nodiscard]] int gridRowsFromInput(const ScenarioInput& in);
 [[nodiscard]] int gridColsFromInput(const ScenarioInput& in);
 
+// Текст о сетке и нормативных буферах (§2.2, ГОСТ → stand_catalog).
+[[nodiscard]] std::string formatGridSetupNote(const ScenarioInput& in);
+
 // Сборка постановки БЕЗ размещения: стенды без координат (их расставит оптимизатор).
 [[nodiscard]] ScenarioBundle buildFromInput(const ScenarioInput& in);
 
