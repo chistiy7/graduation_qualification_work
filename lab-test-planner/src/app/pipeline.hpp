@@ -4,22 +4,28 @@
 #include "app/preprocessor.hpp"
 #include "engine/lab_optimiser.hpp"
 #include "model/scenario_bundle.hpp"
+#include "model/scenario_input.hpp"
 
 #include <filesystem>
+#include <string>
 
 namespace lab {
 
 struct PipelineOutput {
     ScenarioBundle bundle;
-    OptimisationResult result;
+    PlanResult result;
     std::filesystem::path reportPath;
     std::filesystem::path csvPath;
+    std::string layoutNote;
+    long long layoutEvaluated = 0;
 };
 
-// Связка: препроцессор → ядро → постпроцессор
+// Связка: размещение (если нужно) → препроцессор → ядро → постпроцессор
 class Pipeline {
 public:
     [[nodiscard]] PipelineOutput run(ScenarioBundle bundle, bool exportFiles = true) const;
+    [[nodiscard]] PipelineOutput runFromInput(const ScenarioInput& in,
+                                              bool exportFiles = true) const;
 
 private:
     Preprocessor preprocessor_;

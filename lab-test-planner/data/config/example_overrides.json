@@ -1,0 +1,10 @@
+{
+  "programs": [
+    {
+      "equipmentId": "e_torsion",
+      "operationId": "torsion",
+      "normativeTimeMin": 12.0,
+      "modePowerKw": 1.2
+    }
+  ]
+}

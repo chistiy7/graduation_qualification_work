@@ -1,33 +1,38 @@
 #pragma once
 
 #include "engine/metrics.hpp"
+#include "engine/program_efficiency.hpp"
 #include "engine/route_planner.hpp"
 #include "model/planning_strategy.hpp"
 #include "model/scenario_bundle.hpp"
 
+#include <string>
+#include <vector>
+
 namespace lab {
 
-struct OptimisationResult {
-    TestRoute baselineRoute;
-    TestRoute optimizedRoute;
-    ComparisonRow comparison;
+// Единый оптимальный план: маршрут испытаний и его показатели/себестоимость
+struct PlanResult {
+    TestRoute route;
+    VariantMetrics metrics;
+    ProgramEfficiencyMetrics efficiency;
+    std::string orderingNote;
+    std::vector<std::string> energyWarnings;  // t_norm < t_load_min
 };
 
-// Сравнение двух стратегий упорядочивания маршрута (без заданных N/L извне)
+// Подбор лучшего порядка операций на заданном размещении (min C) → один план
 class LabOptimiser {
 public:
     explicit LabOptimiser(MetricsEngine metrics = {});
 
-    [[nodiscard]] OptimisationResult compareStrategies(
-        const ProblemDefinition& problem,
-        RouteOrderingStrategy baseline = RouteOrderingStrategy::BySpecimenThenOperation,
-        RouteOrderingStrategy optimized = RouteOrderingStrategy::ByOperationThenSpecimen) const;
+    [[nodiscard]] PlanResult plan(const ProblemDefinition& problem) const;
 
-    [[nodiscard]] OptimisationResult run(const ScenarioBundle& bundle) const;
+    [[nodiscard]] PlanResult run(const ScenarioBundle& bundle) const;
 
-    [[nodiscard]] static std::string formatReport(const OptimisationResult& result);
+    [[nodiscard]] static std::string formatReport(const PlanResult& result,
+                                                  const ProblemDefinition& problem);
 
-    void printReport(const OptimisationResult& result) const;
+    void printReport(const PlanResult& result, const ProblemDefinition& problem) const;
 
 private:
     [[nodiscard]] TestRoute buildRoute(const ProblemDefinition& problem,

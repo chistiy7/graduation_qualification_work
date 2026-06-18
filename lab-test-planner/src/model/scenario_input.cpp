@@ -1,6 +1,10 @@
 #include "model/scenario_input.hpp"
 
+#include "config/program_resolver.hpp"
 #include "domain/stand_catalog.hpp"
+#include "domain/test_program_catalog.hpp"
+#include "engine/operation_energy.hpp"
+#include "io/config_json.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,90 +14,41 @@ namespace lab {
 
 namespace {
 
-struct OpPar {
-    double durationMin, costOp, costEnergy, laborHours;
-};
-
-OpPar defaultOpPar(TestOperationType type) {
-    switch (type) {
-    case TestOperationType::Tension:        return {30.0, 200.0, 300.0, 0.20};
-    case TestOperationType::Torsion:        return {40.0, 250.0, 350.0, 0.25};
-    case TestOperationType::Bending:        return {35.0, 220.0, 320.0, 0.22};
-    case TestOperationType::Compression:    return {30.0, 200.0, 300.0, 0.20};
-    case TestOperationType::Fatigue:        return {120.0, 400.0, 500.0, 0.40};
-    case TestOperationType::TensionPlusTorsion:  return {60.0, 350.0, 450.0, 0.35};
-    case TestOperationType::BendingPlusTorsion:  return {60.0, 360.0, 460.0, 0.35};
-    case TestOperationType::Thermomechanical:    return {90.0, 350.0, 600.0, 0.35};
-    default:                                return {15.0, 80.0, 100.0, 0.10};
-    }
-}
-
-struct StandPar {
-    double setupTimeMin, setupCost, amortPerHour, fundTimeMin, cellPlacementCost;
-};
-
-StandPar defaultStandPar(StandType type) {
-    constexpr double kCell = 5000.0;
-    switch (type) {
-    case StandType::UniversalTensile:     return {10.0, 200.0, 2000.0, 240.0, kCell};
-    case StandType::TorsionMachine:       return {10.0, 200.0, 2500.0, 240.0, kCell};
-    case StandType::BendingRig:           return {12.0, 220.0, 1800.0, 200.0, kCell};
-    case StandType::FatigueStand:         return {15.0, 300.0, 3000.0, 480.0, kCell * 1.5};
-    case StandType::ThermomechanicalUnit: return {25.0, 450.0, 3500.0, 360.0, kCell * 2.0};
-    default:                              return {10.0, 200.0, 2000.0, 240.0, kCell};
-    }
-}
-
-// Стенд, способный выполнить операцию
-const StandDef* standForOperation(TestOperationType op) {
-    for (const auto& s : approvedStands()) {
-        for (const auto cap : s.capableOperations) {
-            if (cap == op) return &s;
+LabConfigOverrides mergedOverrides(const ScenarioInput& in) {
+    LabConfigOverrides merged = in.configOverrides;
+    if (!in.overrideConfigPath.empty()) {
+        const auto fromFile = loadConfigOverridesJson(in.overrideConfigPath);
+        for (const auto& patch : fromFile.programs) {
+            merged.programs.push_back(patch);
         }
     }
-    return nullptr;
+    return merged;
 }
 
-TestStage makeStage(TestOperationType type) {
-    const auto* def = findOperationDef(type);
-    if (!def) throw std::runtime_error("unknown operation type");
-    const auto par = defaultOpPar(type);
-
-    TestStage stage;
-    stage.id = def->id;
-    stage.operationType = type;
-    stage.regime = def->regime;
-    stage.nameRu = def->nameRu;
-    stage.destructive = def->destructive;
-    stage.combined = def->combined;
-    stage.durationMin = par.durationMin;
-    stage.costOp = par.costOp;
-    stage.costEnergy = par.costEnergy;
-    stage.laborHours = par.laborHours;
-
-    switch (def->regime) {
-    case WorkloadRegime::Thermal:
-    case WorkloadRegime::Thermomechanical:
-        stage.kind = TestKind::Thermal;
-        break;
-    case WorkloadRegime::CombinedSequential:
-    case WorkloadRegime::CombinedSimultaneous:
-        stage.kind = TestKind::Combined;
-        break;
-    default:
-        stage.kind = TestKind::Mechanical;
+StandType standTypeForOperation(TestOperationType op, const LabConfigOverrides& overrides) {
+    const auto program = programForOperation(op, &overrides);
+    if (const auto* sdef = findStandDefById(program.equipmentId)) {
+        return sdef->type;
     }
-    return stage;
+    throw std::runtime_error("неизвестный стенд для операции: " + program.equipmentId);
 }
 
 }  // namespace
 
+int gridCellCount(const ScenarioInput& in) {
+    const double cellArea = in.cellSizeM * in.cellSizeM;
+    return std::max(1, static_cast<int>(std::lround(in.roomAreaM2 / cellArea)));
+}
+
 int gridRowsFromInput(const ScenarioInput& in) {
-    return std::max(1, static_cast<int>(std::lround(in.roomLengthM / in.cellSizeM)));
+    const int n = gridCellCount(in);
+    return std::max(1, static_cast<int>(std::lround(std::sqrt(static_cast<double>(n)))));
 }
 
 int gridColsFromInput(const ScenarioInput& in) {
-    return std::max(1, static_cast<int>(std::lround(in.roomWidthM / in.cellSizeM)));
+    const int n = gridCellCount(in);
+    const int rows = gridRowsFromInput(in);
+    return std::max(1, (n + rows - 1) / rows);
 }
 
 const std::vector<TestOperationType>& selectableTestTypes() {
@@ -115,14 +70,49 @@ std::string testTypeNameRu(TestOperationType type) {
     return "?";
 }
 
-ScenarioBundle buildFromInput(const ScenarioInput& in) {
-    if (in.testTypes.empty()) {
-        throw std::runtime_error("не выбран ни один тип испытаний");
+ScenarioInput makeScenario8Types80Input() {
+    ScenarioInput in;
+    in.roomAreaM2 = 100.0;
+    in.cellSizeM = 2.0;
+    in.batchSize = 80;
+    in.laborRatePerHour = 450.0;
+    in.energyTariffPerKwh = 6.5;
+    in.specimenVolumeM3 = 3.93e-6;  // d₀=10 мм, l₀=50 мм
+    for (const auto testType : selectableTestTypes()) {
+        in.groups.push_back(SpecimenGroup{10, testType});
     }
+    return in;
+}
+
+ScenarioBundle buildScenario8Types80() {
+    auto bundle = buildFromInput(makeScenario8Types80Input());
+    bundle.name = "demo_8_types_80";
+    bundle.description =
+        "80 образцов: по 10 на каждый из 8 видов испытаний; 100 м², ставка 450 руб/ч, "
+        "тариф 6.5 руб/кВт·ч, объём образца базовый (d₀=10 мм, l₀=50 мм).";
+    return bundle;
+}
+
+ScenarioBundle buildFromInput(const ScenarioInput& in) {
+    if (in.groups.empty()) {
+        throw std::runtime_error("не задано ни одной группы образцов");
+    }
+
+    int groupSum = 0;
+    for (const auto& g : in.groups) {
+        if (g.count <= 0) throw std::runtime_error("число образцов в группе должно быть > 0");
+        groupSum += g.count;
+    }
+    if (in.batchSize > 0 && groupSum != in.batchSize) {
+        throw std::runtime_error("сумма образцов по группам (" + std::to_string(groupSum) +
+                                 ") не равна общему числу (" + std::to_string(in.batchSize) + ")");
+    }
+
+    const auto overrides = mergedOverrides(in);
 
     ScenarioBundle bundle;
     bundle.name = "user_scenario";
-    bundle.description = "Пользовательский сценарий (площадь, партия, типы испытаний)";
+    bundle.description = "Пользовательский сценарий (площадь, партия, группы испытаний)";
 
     auto& p = bundle.problem;
     p.laborRatePerHour = in.laborRatePerHour;
@@ -131,71 +121,77 @@ ScenarioBundle buildFromInput(const ScenarioInput& in) {
     p.minutesPerGridStep = 1.0;
     p.gridRows = gridRowsFromInput(in);
     p.gridCols = gridColsFromInput(in);
-    p.objectiveMode = ObjectiveMode::TotalCostRub;
 
-    // Операции из выбранных типов (без дублей)
-    std::vector<TestOperationType> ops;
-    for (const auto t : in.testTypes) {
-        if (std::find(ops.begin(), ops.end(), t) == ops.end()) ops.push_back(t);
+    std::vector<TestOperationType> allOps;
+    for (const auto& g : in.groups) {
+        if (std::find(allOps.begin(), allOps.end(), g.testType) == allOps.end())
+            allOps.push_back(g.testType);
     }
-    for (const auto t : ops) {
-        p.operations.push_back(makeStage(t));
+    for (const auto t : allOps) {
+        p.operations.push_back(buildStageFromProgram(t, &overrides));
     }
 
-    // Стенды: уникальные по типу, способные выполнить выбранные операции
     std::vector<StandType> standTypes;
-    for (const auto t : ops) {
-        const auto* sdef = standForOperation(t);
-        if (!sdef) throw std::runtime_error("нет стенда для операции: " + testTypeNameRu(t));
-        if (std::find(standTypes.begin(), standTypes.end(), sdef->type) == standTypes.end()) {
-            standTypes.push_back(sdef->type);
+    for (const auto t : allOps) {
+        const auto st = standTypeForOperation(t, overrides);
+        if (std::find(standTypes.begin(), standTypes.end(), st) == standTypes.end()) {
+            standTypes.push_back(st);
         }
     }
     for (const auto st : standTypes) {
         const auto* sdef = findStandDef(st);
-        const auto par = defaultStandPar(st);
-        LabEquipment eq;
-        eq.id = sdef->idPrefix;
-        eq.cellId.clear();  // координаты назначит оптимизатор
-        eq.standType = st;
-        eq.nameRu = sdef->nameRu;
-        eq.setupTimeMin = par.setupTimeMin;
-        eq.setupCost = par.setupCost;
-        eq.amortPerHour = par.amortPerHour;
-        eq.fundTimeMin = par.fundTimeMin;
-        eq.cellPlacementCost = par.cellPlacementCost;
+        if (!sdef) continue;
+
+        TestProgramDef programForStand;
+        bool foundProgram = false;
+        for (const auto t : allOps) {
+            const auto prog = programForOperation(t, &overrides);
+            if (prog.equipmentId == sdef->idPrefix) {
+                programForStand = prog;
+                foundProgram = true;
+                break;
+            }
+        }
+        if (!foundProgram) continue;
+
+        auto eq = buildEquipmentFromProgram(programForStand, st, &overrides);
+        eq.cellId.clear();
         p.equipment.push_back(eq);
 
-        for (const auto t : ops) {
+        for (const auto t : allOps) {
             if (standCanExecute(st, t)) {
                 if (const auto* odef = findOperationDef(t)) p.capable[eq.id][odef->id] = true;
             }
         }
     }
 
-    // Партия образцов: каждый требует все выбранные операции
-    for (int i = 0; i < std::max(1, in.batchSize); ++i) {
-        Specimen s;
-        s.id = "s" + std::to_string(i + 1);
-        s.role = SpecimenRole::Primary;
-        s.prepTimeMin = 10.0;
-        s.prepLaborHours = 0.15;
-        p.specimens.push_back(s);
-        for (const auto t : ops) {
-            if (const auto* odef = findOperationDef(t)) p.required[s.id][odef->id] = true;
+    int specimenIdx = 0;
+    for (const auto& g : in.groups) {
+        const auto* odef = findOperationDef(g.testType);
+        for (int i = 0; i < g.count; ++i) {
+            Specimen s;
+            s.id = "s" + std::to_string(++specimenIdx);
+            s.role = SpecimenRole::Primary;
+            s.prepTimeMin = 10.0;
+            s.prepLaborHours = 0.15;
+            s.volumeM3 = in.specimenVolumeM3;
+            p.specimens.push_back(s);
+            if (odef) p.required[s.id][odef->id] = true;
         }
     }
 
-    // Предшествование из каталога (mustFollow) среди выбранных операций
-    for (const auto t : ops) {
+    for (const auto t : allOps) {
         const auto* def = findOperationDef(t);
         if (!def) continue;
         for (const auto pred : def->mustFollow) {
-            if (std::find(ops.begin(), ops.end(), pred) == ops.end()) continue;
+            if (std::find(allOps.begin(), allOps.end(), pred) == allOps.end()) continue;
             const auto* pdef = findOperationDef(pred);
             if (pdef) p.precedence.emplace_back(pdef->id, def->id);
         }
     }
+
+    const double V = p.specimens.empty() ? in.specimenVolumeM3 : p.specimens.front().volumeM3;
+    finalizeOperationTimingAndEnergy(p, V);
 
     return bundle;
 }

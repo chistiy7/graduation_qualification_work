@@ -24,7 +24,7 @@ const std::vector<ProgramModeSpec>& approvedProgramModes() {
                  {TestOperationType::SpecimenPreparation, TestOperationType::GeometryControl,
                   TestOperationType::Tension, TestOperationType::Torsion,
                   TestOperationType::ResultsProcessing},
-                 {StandType::UniversalTensile, StandType::TorsionMachine},
+                 {StandType::TensionStand, StandType::TorsionMachine},
                  {AuxiliaryZoneType::PreparationTable, AuxiliaryZoneType::MeasurementZone,
                   AuxiliaryZoneType::OperatorDesk}),
         makeSpec(LabProgramMode::MechanicalExtended, "mechanical_extended",
@@ -34,33 +34,27 @@ const std::vector<ProgramModeSpec>& approvedProgramModes() {
                   TestOperationType::Tension, TestOperationType::Torsion,
                   TestOperationType::Bending, TestOperationType::Fatigue,
                   TestOperationType::ResultsProcessing},
-                 {StandType::UniversalTensile, StandType::TorsionMachine, StandType::BendingRig,
+                 {StandType::TensionStand, StandType::TorsionMachine, StandType::BendingRig,
                   StandType::FatigueStand},
                  {AuxiliaryZoneType::PreparationTable, AuxiliaryZoneType::MeasurementZone,
                   AuxiliaryZoneType::ToolingStorage, AuxiliaryZoneType::OperatorDesk}),
-        makeSpec(LabProgramMode::ThermalCycle, "thermal_cycle", "Термический цикл",
-                 "Статический и индукционный нагрев, охлаждение",
-                 {TestOperationType::SpecimenPreparation, TestOperationType::GeometryControl,
-                  TestOperationType::ThermalStatic, TestOperationType::InductionHeating,
-                  TestOperationType::CoolingHold, TestOperationType::ResultsProcessing},
-                 {StandType::ThermalFurnace, StandType::InductionHeater},
-                 {AuxiliaryZoneType::PreparationTable, AuxiliaryZoneType::CoolingZone,
-                  AuxiliaryZoneType::OperatorDesk}),
         makeSpec(LabProgramMode::Thermomechanical, "thermomechanical", "Термомеханическая программа",
-                 "Комбинированные и термомеханические режимы (гл. 1, §1.3)",
+                 "Комбинированные и термомеханические режимы (8 стендов, 1 техкарта на стенд)",
                  {TestOperationType::SpecimenPreparation, TestOperationType::GeometryControl,
-                  TestOperationType::ThermalStatic, TestOperationType::Thermomechanical,
-                  TestOperationType::TensionPlusTorsion, TestOperationType::BendingPlusTorsion,
-                  TestOperationType::CoolingHold, TestOperationType::ResultsProcessing},
-                 {StandType::ThermalFurnace, StandType::ThermomechanicalUnit,
-                  StandType::UniversalTensile, StandType::TorsionMachine, StandType::BendingRig},
-                 {AuxiliaryZoneType::PreparationTable, AuxiliaryZoneType::CoolingZone,
-                  AuxiliaryZoneType::MeasurementZone, AuxiliaryZoneType::OperatorDesk}),
+                  TestOperationType::Thermomechanical, TestOperationType::TensionPlusTorsion,
+                  TestOperationType::BendingPlusTorsion, TestOperationType::ResultsProcessing},
+                 {StandType::ThermomechanicalStand, StandType::AxialTorsionRig,
+                  StandType::BendingTorsionRig},
+                 {AuxiliaryZoneType::PreparationTable, AuxiliaryZoneType::MeasurementZone,
+                  AuxiliaryZoneType::OperatorDesk}),
     };
     return modes;
 }
 
 const ProgramModeSpec* findProgramMode(LabProgramMode mode) {
+    if (mode == LabProgramMode::ThermalCycle) {
+        mode = LabProgramMode::Thermomechanical;
+    }
     for (const auto& spec : approvedProgramModes()) {
         if (spec.mode == mode) return &spec;
     }
@@ -68,6 +62,9 @@ const ProgramModeSpec* findProgramMode(LabProgramMode mode) {
 }
 
 std::string programModeNameRu(LabProgramMode mode) {
+    if (mode == LabProgramMode::ThermalCycle) {
+        return programModeNameRu(LabProgramMode::Thermomechanical);
+    }
     if (const auto* spec = findProgramMode(mode)) return spec->nameRu;
     return "неизвестный режим";
 }

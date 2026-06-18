@@ -31,15 +31,30 @@ if(LAB_PLANNER_BUILD_TESTS)
         src/domain/laboratory.cpp
         src/domain/test_operation_catalog.cpp
         src/domain/stand_catalog.cpp
+        src/domain/test_program_catalog.cpp
+        src/config/config_overrides.cpp
+        src/config/program_resolver.cpp
         src/engine/metrics.cpp
         src/engine/route_analysis.cpp
         src/engine/stand_state_matrix.cpp
         src/engine/layout_map.cpp
+        src/engine/layout_area.cpp
         src/engine/route_planner.cpp
         src/engine/lab_optimiser.cpp
+        src/engine/operation_energy.cpp
+        src/engine/program_efficiency.cpp
+        src/app/preprocessor.cpp
+        src/app/pipeline.cpp
+        src/app/postprocessor.cpp
+        src/app/paths.cpp
+        src/engine/layout_optimizer.cpp
+        src/io/scenario_json.cpp
+        src/io/config_json.cpp
+        src/model/scenario_validation.cpp
         src/model/lab_program_mode.cpp
         src/model/program_builder.cpp
         src/model/scenario_bundle.cpp
+        src/model/scenario_input.cpp
     )
     add_test(NAME route_metrics COMMAND LabPlanner_test)
 endif()

@@ -21,3 +21,11 @@ __pycache__/
 *.m4a
 *.wav
 *.mp3
+
+# Cursor / AI session artifacts
+cursor_*.md
+prompt*.md
+agent*.md
+*cursor*
+*prompt*
+*agent*

@@ -1,7 +1,11 @@
 #include "engine/route_analysis.hpp"
 
+#include "domain/physics_constants.hpp"
+#include "domain/test_stage.hpp"
+
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace lab {
 
@@ -14,15 +18,33 @@ const LabEquipment* findEquipment(const ProblemDefinition& p, const std::string&
     return nullptr;
 }
 
+const TestStage* findOperation(const ProblemDefinition& p, const std::string& id) {
+    for (const auto& o : p.operations) {
+        if (o.id == id) return &o;
+    }
+    return nullptr;
+}
+
+double setupPowerKw(const LabEquipment& e, const TestStage* op) {
+    if (op && op->setupPowerKw > 0.0) return op->setupPowerKw;
+    return K_POWER_SETUP * e.nominalPowerKw;
+}
+
+double setupTimeMin(const LabEquipment& e, const TestStage* op) {
+    if (op && op->programSetupTimeMin > 0.0) return op->programSetupTimeMin;
+    return e.setupTimeMin;
+}
+
 }  // namespace
 
 RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
                                      const TestRoute& route) const {
     RouteAnalysis out;
     const auto& steps = route.steps();
-    if (steps.empty()) return out;
 
-    std::unordered_map<std::string, std::optional<std::string>> lastOperationOnEquipment;
+    std::unordered_map<std::string, std::optional<std::string>> lastModeOnEquipment;
+    std::unordered_map<std::string, double> testMinByEquipment;
+    std::unordered_map<std::string, double> setupMinByEquipment;
 
     for (const auto& step : steps) {
         const auto* equipment = findEquipment(problem, step.equipmentId);
@@ -31,28 +53,37 @@ RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
         }
 
         bool needsSetup = true;
-        if (auto it = lastOperationOnEquipment.find(equipment->id);
-            it != lastOperationOnEquipment.end() && it->second.has_value()) {
+        if (auto it = lastModeOnEquipment.find(equipment->id);
+            it != lastModeOnEquipment.end() && it->second.has_value()) {
             needsSetup = it->second.value() != step.operationId;
         }
 
         if (needsSetup) {
+            const auto* op = findOperation(problem, step.operationId);
+            const double tSetup = setupTimeMin(*equipment, op);
+            const double pSetup = setupPowerKw(*equipment, op);
+
             ++out.setupCount;
-            out.setupTimeMin += equipment->setupTimeMin;
+            out.setupTimeMin += tSetup;
             out.setupCost += equipment->setupCost;
-            out.busyMinutesByEquipment[equipment->id] += equipment->setupTimeMin;
+            setupMinByEquipment[equipment->id] += tSetup;
+            out.setupCostByEquipment[equipment->id] += equipment->setupCost;
+            out.busyMinutesByEquipment[equipment->id] += tSetup;
+
+            if (problem.electricityTariffPerKwh > 0.0 && pSetup > 0.0) {
+                const double kwh = pSetup * (tSetup / 60.0);
+                out.energySetupCost += kwh * problem.electricityTariffPerKwh;
+            }
         }
 
-        if (const auto* op = [&]() -> const TestStage* {
-                for (const auto& o : problem.operations) {
-                    if (o.id == step.operationId) return &o;
-                }
-                return nullptr;
-            }()) {
-            out.busyMinutesByEquipment[equipment->id] += op->durationMin;
+        if (const auto* op = findOperation(problem, step.operationId)) {
+            const double busy =
+                op->cycleTimeMin > 0.0 ? op->cycleTimeMin : op->durationMin;
+            testMinByEquipment[equipment->id] += busy;
+            out.busyMinutesByEquipment[equipment->id] += busy;
         }
 
-        lastOperationOnEquipment[equipment->id] = step.operationId;
+        lastModeOnEquipment[equipment->id] = step.operationId;
     }
 
     for (size_t i = 1; i < steps.size(); ++i) {
@@ -69,6 +100,8 @@ RouteAnalysis RouteAnalyzer::analyze(const ProblemDefinition& problem,
     }
 
     out.moveTimeMin = out.routeLengthSteps * problem.minutesPerGridStep;
+    out.testMinByEquipment = std::move(testMinByEquipment);
+    out.setupMinByEquipment = std::move(setupMinByEquipment);
     return out;
 }
 

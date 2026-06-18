@@ -15,7 +15,6 @@
 | torsion | Кручение | ShortTerm |
 | bending | Изгиб | ShortTerm |
 | fatigue | Усталость | CyclicLong |
-| hardness | Твердость (не в режимах программы, НК исключён) | ShortTerm |
 | thermal_static | Статический нагрев | Thermal |
 | thermal_cyclic | Циклический термический режим | Thermal |
 | induction | Индукционный нагрев | Thermal |
@@ -24,7 +23,6 @@
 | results | Обработка результатов | Auxiliary |
 | tension_torsion | Растяжение + кручение | CombinedSequential |
 | bending_torsion | Изгиб + кручение | CombinedSequential |
-| compression_bending | Сжатие + изгиб | CombinedSequential |
 
 ## Испытательные стенды (гл. 2, §2.1)
 
@@ -34,7 +32,6 @@
 | TorsionMachine | Машина кручения | torsion, комбинированные с кручением |
 | BendingRig | Стенд изгиба | bending, комбинированные с изгибом |
 | FatigueStand | Усталость | fatigue |
-| HardnessTester | Твердомер | hardness |
 | ThermalFurnace | Печь | thermal_static, thermal_cyclic |
 | InductionHeater | Индукция | induction |
 | ThermomechanicalUnit | Термомеханика | thermo_mech |
@@ -45,7 +42,8 @@
 |-------|------------|
 | **BasicMechanical** | растяжение, кручение (демо) |
 | **MechanicalExtended** | + изгиб, усталость |
-| **ThermalCycle** | термический нагрев, индукция, охлаждение |
-| **Thermomechanical** | термомеханика и комбинированные режимы |
+| **Thermomechanical** | термомеханика и комбинированные режимы (термические этапы — в составе комбинированных программ) |
+
+`ThermalCycle` в enum сохранён как устаревший алиас → `Thermomechanical` (для совместимости до обновления GUI).
 
 Сценарий собирается через `buildFromProgram(ProgramBuildRequest)` — параметры времени/стоимости задаются в запросе, не в коде метрик.

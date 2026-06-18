@@ -100,7 +100,7 @@ lab-test-planner/
 | `engine/metrics/route.cpp` | L |
 | `engine/metrics/load.cpp` | η |
 | `engine/metrics/objective.cpp` | T̃…η̃, K, K′ |
-| `engine/variant.hpp` | вариант 0 (базовый) / 1 (оптимизированный) |
+| `engine/variant.hpp` |один `PlanResult` (оптимальный план) |
 
 **Критерий:** `tests/test_chapter36.cpp` — числа совпадают с §3.6.
 

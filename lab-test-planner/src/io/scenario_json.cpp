@@ -1,6 +1,7 @@
 #include "io/scenario_json.hpp"
 
 #include "model/scenario_bundle.hpp"
+#include "model/scenario_input.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -25,10 +26,6 @@ void writeMatrixEntries(std::ostream& out, const char* key,
     out << "\n  ],\n";
 }
 
-std::string strategyName(RouteOrderingStrategy s) {
-    return s == RouteOrderingStrategy::BySpecimenThenOperation ? "by_specimen" : "by_operation";
-}
-
 }  // namespace
 
 void saveScenarioJson(const std::filesystem::path& path, const ScenarioBundle& bundle) {
@@ -41,20 +38,14 @@ void saveScenarioJson(const std::filesystem::path& path, const ScenarioBundle& b
     out << "  \"description\": \"" << bundle.description << "\",\n";
     out << "  \"laborRatePerHour\": " << p.laborRatePerHour << ",\n";
     out << "  \"gridCellSizeM\": " << p.gridCellSizeM << ",\n";
-    out << "  \"objectiveMode\": \""
-        << (p.objectiveMode == ObjectiveMode::TotalCostRub ? "total_cost_rub" : "weighted_k")
-        << "\",\n";
     out << "  \"minutesPerGridStep\": " << p.minutesPerGridStep << ",\n";
-    out << "  \"weights\": [" << p.weights.alphaT << ", " << p.weights.alphaC << ", "
-        << p.weights.alphaN << ", " << p.weights.alphaL << ", " << p.weights.alphaEta << "],\n";
-    out << "  \"baselineStrategy\": \"" << strategyName(bundle.baselineStrategy) << "\",\n";
-    out << "  \"optimizedStrategy\": \"" << strategyName(bundle.optimizedStrategy) << "\",\n";
 
     out << "  \"specimens\": [\n";
     for (size_t i = 0; i < p.specimens.size(); ++i) {
         const auto& s = p.specimens[i];
         out << "    {\"id\": \"" << s.id << "\", \"prepMin\": " << s.prepTimeMin
-            << ", \"prepLaborH\": " << s.prepLaborHours << "}";
+            << ", \"prepLaborH\": " << s.prepLaborHours
+            << ", \"volumeM3\": " << s.volumeM3 << "}";
         if (i + 1 < p.specimens.size()) out << ",";
         out << "\n";
     }
@@ -64,8 +55,14 @@ void saveScenarioJson(const std::filesystem::path& path, const ScenarioBundle& b
     for (size_t i = 0; i < p.operations.size(); ++i) {
         const auto& o = p.operations[i];
         out << "    {\"id\": \"" << o.id << "\", \"durationMin\": " << o.durationMin
+            << ", \"durationNormMin\": " << o.durationNormMin
+            << ", \"cycleTimeMin\": " << o.cycleTimeMin
             << ", \"costOp\": " << o.costOp << ", \"costEnergy\": " << o.costEnergy
-            << ", \"laborHours\": " << o.laborHours << "}";
+            << ", \"laborHours\": " << o.laborHours
+            << ", \"sigmaMpa\": " << o.sigmaMpa << ", \"deltaT_C\": " << o.deltaT_C
+            << ", \"deformationEnergyJ\": " << o.deformationEnergyJ
+            << ", \"minLoadTimeMin\": " << o.minLoadTimeMin
+            << ", \"energyKwh\": " << o.energyKwh << "}";
         if (i + 1 < p.operations.size()) out << ",";
         out << "\n";
     }
@@ -87,7 +84,7 @@ void saveScenarioJson(const std::filesystem::path& path, const ScenarioBundle& b
         out << row << ", \"col\": " << col << ", \"setupMin\": " << e.setupTimeMin
             << ", \"setupCost\": " << e.setupCost << ", \"amortPerHour\": " << e.amortPerHour
             << ", \"fundMin\": " << e.fundTimeMin << ", \"cellPlacementCost\": "
-            << e.cellPlacementCost << "}";
+            << e.cellPlacementCost << ", \"nominalPowerKw\": " << e.nominalPowerKw << "}";
         if (i + 1 < p.equipment.size()) out << ",";
         out << "\n";
     }
@@ -112,9 +109,12 @@ ScenarioBundle loadScenarioJson(const std::filesystem::path& path) {
     if (stem.find("two") != std::string::npos || stem.find("chapter") != std::string::npos) {
         return buildDemoTwoSpecimens();
     }
+    if (stem.find("8_types_80") != std::string::npos || stem.find("8x10") != std::string::npos) {
+        return buildScenario8Types80();
+    }
     throw std::runtime_error(
-        "загрузка JSON: полный парсер в разработке; используйте demo_simple / demo_two_specimens "
-        "или сохранённый файл с именем *simple* / *two*");
+        "загрузка JSON: полный парсер в разработке; используйте demo_simple / demo_two_specimens / "
+        "demo_8_types_80 или сохранённый файл с именем *simple* / *two* / *8_types_80*");
 }
 
 }  // namespace lab

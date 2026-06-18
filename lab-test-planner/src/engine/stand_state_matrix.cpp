@@ -8,7 +8,7 @@ namespace lab {
 StandStateMatrix StandStateAnalyzer::analyze(const ProblemDefinition& problem,
                                                const TestRoute& route) const {
     StandStateMatrix matrix;
-    std::unordered_map<std::string, std::optional<std::string>> lastOpOnStand;
+    std::unordered_map<std::string, std::optional<std::string>> lastModeOnStand;
     std::unordered_map<std::string, StandState> standState;
 
     for (const auto& step : route.steps()) {
@@ -21,8 +21,8 @@ StandStateMatrix StandStateAnalyzer::analyze(const ProblemDefinition& problem,
                              : StandState::Idle;
 
         bool needsSetup = true;
-        if (auto it = lastOpOnStand.find(step.equipmentId);
-            it != lastOpOnStand.end() && it->second.has_value()) {
+        if (auto it = lastModeOnStand.find(step.equipmentId);
+            it != lastModeOnStand.end() && it->second.has_value()) {
             needsSetup = it->second.value() != step.operationId;
         }
 
@@ -40,7 +40,7 @@ StandStateMatrix StandStateAnalyzer::analyze(const ProblemDefinition& problem,
         }
 
         matrix.events.push_back(ev);
-        lastOpOnStand[step.equipmentId] = step.operationId;
+        lastModeOnStand[step.equipmentId] = step.operationId;
         standState[step.equipmentId] = StandState::Busy;
     }
 

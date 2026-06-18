@@ -40,10 +40,10 @@ struct ProgramBuildRequest {
     std::string description;
     std::vector<SpecimenProgram> specimens;
     double laborRatePerHour = 1000.0;
+    double energyTariffPerKwh = 6.5;
+    double specimenVolumeM3 = 3.93e-6;
     double minutesPerGridStep = 1.0;
     double gridCellSizeM = 2.0;
-    ObjectiveMode objectiveMode = ObjectiveMode::TotalCostRub;
-    ObjectiveWeights weights{};
     std::unordered_map<TestOperationType, OperationParams> operationParams;
     std::unordered_map<StandType, StandParams> standParams;
 };

@@ -4,6 +4,8 @@
 #include "engine/stand_state_matrix.hpp"
 #include "io/scenario_json.hpp"
 #include "model/scenario_bundle.hpp"
+#include "model/scenario_input.hpp"
+#include "model/scenario_validation.hpp"
 
 #include <stdexcept>
 
@@ -13,6 +15,9 @@ ScenarioBundle Preprocessor::loadBuiltin(const std::string& id) const {
     if (id == "simple" || id == "demo_simple") return buildDemoSimple();
     if (id == "two_specimens" || id == "demo_two_specimens" || id == "chapter36") {
         return buildDemoTwoSpecimens();
+    }
+    if (id == "8_types_80" || id == "demo_8_types_80" || id == "8x10") {
+        return buildScenario8Types80();
     }
     throw std::runtime_error("unknown builtin scenario: " + id);
 }
@@ -59,15 +64,19 @@ std::vector<std::string> Preprocessor::validate(const ScenarioBundle& bundle) co
         errors.push_back("gridCellSizeM должен быть > 0 (ячейка 2×2 м)");
     }
 
-    if (p.objectiveMode == ObjectiveMode::WeightedK) {
-        double sumAlpha = p.weights.alphaT + p.weights.alphaC + p.weights.alphaN +
-                          p.weights.alphaL + p.weights.alphaEta;
-        if (std::abs(sumAlpha - 1.0) > 0.01) {
-            errors.push_back("сумма весов alpha должна быть 1.0");
-        }
+    for (const auto& err : validateSpecimenOneTestRule(p)) {
+        errors.push_back(err);
     }
 
     const auto baseline = RoutePlanner{}.buildBaselineRoute(p);
+    for (const auto& err : validateRouteOneSpecimenOneStep(baseline)) {
+        errors.push_back(err);
+    }
+    for (const auto& err : validateRouteOneSpecimenOneStep(
+             RoutePlanner{}.buildGroupedRoute(p))) {
+        errors.push_back(err);
+    }
+
     StandStateAnalyzer stateAnalyzer;
     const auto stateMatrix = stateAnalyzer.analyze(p, baseline);
     for (const auto& ev : stateMatrix.events) {

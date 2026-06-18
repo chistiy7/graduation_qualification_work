@@ -14,9 +14,9 @@ enum class LabProgramMode {
   BasicMechanical,
   // Расширенная механика: + изгиб, усталость
   MechanicalExtended,
-  // Термический цикл: нагрев, индукция, охлаждение
+  // Устаревший алиас (брифинг 28.05): не в approvedProgramModes(); см. findProgramMode()
   ThermalCycle,
-  // Термомеханика и комбинированные режимы
+  // Термомеханика и комбинированные режимы (термика только здесь)
   Thermomechanical,
 };
 

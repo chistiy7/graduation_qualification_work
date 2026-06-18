@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 
 from .audio_merge import merge_audio_tracks
-from .config import Settings
+from .config import PROMPTS_DIR, Settings
 from .log import progress
-from .pipeline import brief_from_transcript_markdown, process_audio
+from .pipeline import process_audio
 from .fix_scan import render_fix_queue_md, scan_fix_markers
 
 
@@ -58,17 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--notes",
         "-n",
         default="",
-        help="Дополнительные заметки (сейчас игнорируются: LLM отключён)",
-    )
-    proc.add_argument(
-        "--transcript-only",
-        action="store_true",
-        help="Только transcript.md (без брифинга)",
-    )
-    proc.add_argument(
-        "--context",
-        action="store_true",
-        help="transcript.md + context.md по prompts/extract_context.md (поведение по умолчанию)",
+        help="Дополнительные заметки (сохраняются в notes.md сессии)",
     )
     proc.add_argument(
         "--language",
@@ -91,25 +81,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--fix",
         action="store_true",
         help="После обработки сессии обновить очередь правок по меткам #todo/#",
-    )
-
-    brief = sub.add_parser("brief", help="Сделать брифинг (context.md) по transcript.md")
-    brief.add_argument(
-        "transcript",
-        type=Path,
-        help="Путь к transcript.md (например: 03_capture/sessions/.../transcript.md)",
-    )
-    brief.add_argument(
-        "--title",
-        "-t",
-        default=None,
-        help="Название сессии для брифинга (если не указать — имя папки сессии)",
-    )
-    brief.add_argument(
-        "--notes",
-        "-n",
-        default="",
-        help="Дополнительные заметки (сейчас игнорируются: LLM отключён)",
     )
 
     sub.add_parser("info", help="Показать пути и переменные окружения по умолчанию")
@@ -164,7 +135,7 @@ def cmd_info(settings: Settings) -> int:
     print(f"  Выходные сессии: {settings.output_dir}")
     print(f"  Контекст диплома: {settings.context_dir}")
     print(f"  Whisper: model={settings.whisper_model}, device={settings.whisper_device}")
-    print("  LLM: отключён (внешние API не используются)")
+    print(f"  Брифинг: в чате Cursor по {PROMPTS_DIR / 'extract_context.md'}")
     return 0
 
 
@@ -193,10 +164,6 @@ def cmd_process(args: argparse.Namespace, settings: Settings) -> int:
     if args.merge and len(audio_paths) < 2:
         print("Ошибка: --merge требует минимум 2 файла.", file=sys.stderr)
         return 1
-    if args.context and args.transcript_only:
-        print("Ошибка: укажите либо --context, либо --transcript-only.", file=sys.stderr)
-        return 1
-
     merged_temp: Path | None = None
     if args.merge:
         try:
@@ -216,7 +183,6 @@ def cmd_process(args: argparse.Namespace, settings: Settings) -> int:
             audio,
             title=args.title,
             settings=settings,
-            with_context=not args.transcript_only,
             notes=args.notes,
             language=language,
         )
@@ -232,8 +198,10 @@ def cmd_process(args: argparse.Namespace, settings: Settings) -> int:
 
     print(f"Готово: {result.session_dir}")
     print(f"  → {result.transcript_path.name}")
-    if result.context_path:
-        print(f"  → {result.context_path.name}")
+    print(
+        "  → брифинг: в чате — «сделай брифинг по transcript.md» "
+        f"(промпт: {PROMPTS_DIR / 'extract_context.md'})"
+    )
 
     if args.fix:
         try:
@@ -241,29 +209,6 @@ def cmd_process(args: argparse.Namespace, settings: Settings) -> int:
             print(f"  → fix: {out}")
         except Exception as exc:
             print(f"Предупреждение: не удалось обновить fix-очередь: {exc}", file=sys.stderr)
-    return 0
-
-
-def cmd_brief(args: argparse.Namespace, settings: Settings) -> int:
-    transcript = args.transcript.expanduser().resolve()
-    if not transcript.is_file():
-        print(f"Ошибка: файл не найден: {transcript}", file=sys.stderr)
-        return 1
-
-    title = args.title or transcript.parent.name
-    try:
-        out_path = brief_from_transcript_markdown(
-            transcript,
-            title=title,
-            settings=settings,
-            notes=args.notes,
-        )
-    except Exception as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
-        return 1
-
-    print("Готово:")
-    print(f"  → {out_path}")
     return 0
 
 
@@ -304,8 +249,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_clean(settings, args.output_dir)
     if args.command == "process":
         return cmd_process(args, settings)
-    if args.command == "brief":
-        return cmd_brief(args, settings)
     if args.command == "fix":
         return cmd_fix(args, settings)
     parser.error(f"Неизвестная команда: {args.command}")

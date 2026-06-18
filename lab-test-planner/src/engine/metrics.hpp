@@ -7,32 +7,27 @@ namespace lab {
 
 class MetricsEngine {
 public:
+    // Вычисляет и возвращает совокупные метрики (время, стоимость, загрузку, узкое место и др.) по входной задаче и маршруту испытаний.
     [[nodiscard]] VariantMetrics compute(const ProblemDefinition& problem,
                                          const TestRoute& route) const;
-
-    [[nodiscard]] ComparisonRow compare(const ProblemDefinition& problem,
-                                      const TestRoute& baselineRoute,
-                                      const TestRoute& optimizedRoute) const;
+                                  
 
 private:
     [[nodiscard]] double operationTimeSum(const ProblemDefinition& problem,
                                           const TestRoute& route) const;
-    [[nodiscard]] double operationCostSum(const ProblemDefinition& problem,
-                                          const TestRoute& route) const;
-    [[nodiscard]] double laborCost(const ProblemDefinition& problem,
-                                   const TestRoute& route) const;
+    // Возвращает суммарную стоимость только расходных материалов, использованных во всех операциях маршрута (например, материалы, списываемые по техкарте операции).
+    [[nodiscard]] double operationMaterialsCost(const ProblemDefinition& problem,
+                                              const TestRoute& route) const;
+                                       
+    // Возвращает суммарную стоимость энергозатрат в рабочем режиме для всего маршрута.
+    [[nodiscard]] double energyWorkCost(const ProblemDefinition& problem,
+                                        const TestRoute& route) const;
+                                
     [[nodiscard]] double prepLaborCost(const ProblemDefinition& problem) const;
     [[nodiscard]] double operationLaborCost(const ProblemDefinition& problem,
                                             const TestRoute& route) const;
-    [[nodiscard]] double amortizationCost(
-        const ProblemDefinition& problem,
-        const std::unordered_map<std::string, double>& busyByEquipment) const;
-    [[nodiscard]] double averageLoad(
-        const ProblemDefinition& problem,
-        const std::unordered_map<std::string, double>& busyByEquipment) const;
-    [[nodiscard]] double objectiveK(const ObjectiveWeights& w, const VariantMetrics& m) const;
-    [[nodiscard]] double cellPlacementCost(const ProblemDefinition& problem,
-                                           const TestRoute& route) const;
+    [[nodiscard]] double amortizationCost(const ProblemDefinition& problem) const;
+    [[nodiscard]] double averageLoad(const std::vector<EquipmentUtilization>& stats) const;
 };
 
 }  // namespace lab

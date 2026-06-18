@@ -110,7 +110,7 @@ L = Σ Manhattan(ячейкаᵢ → ячейкаᵢ₊₁)
 
 ## §3.6 — пример и верификация
 
-Текстовый пример (2 образца, растяжение + кручение) иллюстрирует **обе** постановки: K с весами и прямое сравнение C₁ < C₀.
+Текстовый пример (2 образца, растяжение + кручение) иллюстрирует постановку min C и при необходимости — взвешенную K.
 
 В ПО:
 
@@ -137,7 +137,7 @@ L = Σ Manhattan(ячейкаᵢ → ячейкаᵢ₊₁)
 ```text
 ScenarioBundle
 ├── name, description
-├── programMode          # BasicMechanical | MechanicalExtended | ThermalCycle | Thermomechanical
+├── programMode          # BasicMechanical | MechanicalExtended | Thermomechanical
 ├── problem: ProblemDefinition
 │   ├── specimens[]      # S
 │   ├── operations[]     # D
@@ -145,9 +145,7 @@ ScenarioBundle
 │   ├── laboratory       # G, Z
 │   ├── required, capable, precedence
 │   ├── laborRatePerHour, gridCellSizeM, minutesPerGridStep
-│   ├── objectiveMode, weights
-├── baselineStrategy     # BySpecimenThenOperation  → вариант 0
-└── optimizedStrategy    # ByOperationThenSpecimen → вариант 1
+│   └── objectiveMode, weights
 ```
 
 Загрузка: встроенные демо (`buildDemo*`), частичный JSON (`scenario_json`), сборка из режима (`buildFromProgram`).
@@ -156,9 +154,9 @@ ScenarioBundle
 
 | Артефакт | Содержание |
 |----------|------------|
-| Консоль / GUI | Таблица T, C, N, L, η, ЦФ для вариантов 0 и 1; маршруты |
-| `output/report_<name>.txt` | Текстовый отчёт |
-| `output/comparison.csv` | metric, baseline, optimized, delta_pct |
+| Консоль / GUI | Один оптимальный план: T_sum, T_cycle, C, N, L, η, разложение C |
+| `output/report_<name>.txt` | Текстовый отчёт + карта размещения |
+| `output/plan.csv` | Агрегированные метрики и статьи C |
 | `output/<name>_saved.json` | Сохранение входных данных (GUI) |
 
 ---
@@ -173,7 +171,7 @@ ScenarioBundle
 4. **GUI** — четыре режима программы, расчёт, экспорт.
 5. **IO** — JSON входных данных; полный парсер — в разработке.
 
-Скриншоты для диплома: экран выбора режима, таблица сравнения 0/1, фрагмент `comparison.csv`.
+Скриншоты для диплома: экран выбора режима, фрагмент `formatReport`, `output/plan.csv`.
 
 ---
 

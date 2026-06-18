@@ -46,9 +46,7 @@ void drawButton(AppWindow& window, const Button& btn, const sf::Font& font, sf::
 
 enum class Screen { Input, Results };
 
-std::string objectiveLabel(const ProblemDefinition& p) {
-    return p.objectiveMode == ObjectiveMode::TotalCostRub ? "C (руб)" : "K (взвеш.)";
-}
+std::string objectiveLabel() { return "C (руб)"; }
 
 }  // namespace
 
@@ -118,17 +116,17 @@ void runGui() {
                             lastRun = pipeline.run(pending, true);
                             resultLines.clear();
                             std::istringstream ss(
-                                LabOptimiser::formatReport(lastRun->result) + "\n" +
-                                renderLayoutMatrix(pending.problem, lastRun->result.optimizedRoute));
+                                LabOptimiser::formatReport(lastRun->result, pending.problem) +
+                                "\n" +
+                                renderLayoutMatrix(pending.problem, lastRun->result.route,
+                                                   lastRun->result.metrics.T_cycle));
                             std::string line;
                             while (std::getline(ss, line)) {
                                 resultLines.push_back(line);
                             }
-                            const auto obj = objectiveLabel(pending.problem);
-                            statusLine = obj + "₀=" +
-                                         std::to_string(lastRun->result.comparison.baseline.K) +
-                                         " " + obj + "₁=" +
-                                         std::to_string(lastRun->result.comparison.optimized.K);
+                            const auto obj = objectiveLabel();
+                            statusLine = obj + " = " +
+                                         std::to_string(lastRun->result.metrics.C);
                             screen = Screen::Results;
                         } catch (const std::exception& ex) {
                             statusLine = std::string("Ошибка: ") + ex.what();
@@ -175,7 +173,10 @@ void runGui() {
             sf::Text hint(window.font(),
                           "Партия S, операции D, матрица состояний стендов.\n"
                           "Ячейка сетки 2×2 м; L — в шагах ячеек.\n"
-                          "ЦФ: открытая постановка (C, руб) или K (взвешенная).",
+                          "ЦФ: открытая постановка (C, руб) или K (взвешенная).\n"
+                          "C_энерг = s^2*V/(2E*n)*тариф  [§3.2].\n"
+                          "V — объём рабочей части образца (V = pi*(d/2)^2*l);\n"
+                          "для CLI: '--cli' -> ввод V и тарифа.",
                           14);
             hint.setFillColor(sf::Color(160, 170, 190));
             hint.setPosition({40.f, 460.f});

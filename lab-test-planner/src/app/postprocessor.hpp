@@ -11,10 +11,9 @@ namespace lab {
 class Postprocessor {
 public:
     [[nodiscard]] std::filesystem::path exportTextReport(const ScenarioBundle& bundle,
-                                                       const OptimisationResult& result) const;
+                                                       const PlanResult& result) const;
 
-    [[nodiscard]] std::filesystem::path exportCsvComparison(
-        const OptimisationResult& result) const;
+    [[nodiscard]] std::filesystem::path exportCsv(const PlanResult& result) const;
 };
 
 }  // namespace lab

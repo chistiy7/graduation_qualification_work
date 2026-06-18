@@ -25,7 +25,6 @@ enum class TestOperationType {
     Torsion,
     Bending,
     Fatigue,
-    Hardness,
     ThermalStatic,
     ThermalCyclic,
     InductionHeating,
@@ -34,7 +33,6 @@ enum class TestOperationType {
     ResultsProcessing,
     TensionPlusTorsion,
     BendingPlusTorsion,
-    CompressionPlusBending,
 };
 
 struct TestOperationDef {

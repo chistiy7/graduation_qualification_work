@@ -5,10 +5,10 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace lab {
 
-// Результат анализа маршрута: все производные метрики из данных задачи
 struct RouteAnalysis {
     int setupCount = 0;
     double setupTimeMin = 0.0;
@@ -16,6 +16,10 @@ struct RouteAnalysis {
     double routeLengthSteps = 0.0;
     double moveTimeMin = 0.0;
     std::unordered_map<std::string, double> busyMinutesByEquipment;
+    std::unordered_map<std::string, double> testMinByEquipment;
+    std::unordered_map<std::string, double> setupMinByEquipment;
+    std::unordered_map<std::string, double> setupCostByEquipment;
+    double energySetupCost = 0.0;
 };
 
 class RouteAnalyzer {

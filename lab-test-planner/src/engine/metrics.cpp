@@ -1,8 +1,9 @@
 #include "engine/metrics.hpp"
 
+#include "engine/layout_area.hpp"
 #include "engine/route_analysis.hpp"
 
-#include <set>
+#include <unordered_map>
 
 namespace lab {
 
@@ -15,6 +16,30 @@ const TestStage* findOperation(const ProblemDefinition& p, const std::string& id
     return nullptr;
 }
 
+const LabEquipment* findEquipment(const ProblemDefinition& p, const std::string& id) {
+    for (const auto& e : p.equipment) {
+        if (e.id == id) return &e;
+    }
+    return nullptr;
+}
+
+void accumulateWorkEnergyByEquipment(
+    const ProblemDefinition& problem, const TestRoute& route,
+    std::unordered_map<std::string, double>& energyKwh,
+    std::unordered_map<std::string, double>& costRub) {
+    for (const auto& step : route.steps()) {
+        const auto* op = findOperation(problem, step.operationId);
+        if (!op) continue;
+        energyKwh[step.equipmentId] += op->energyKwh;
+        costRub[step.equipmentId] += op->costEnergy;
+    }
+}
+
+double busyMinutes(const RouteAnalysis& analysis, const std::string& equipmentId) {
+    const auto it = analysis.busyMinutesByEquipment.find(equipmentId);
+    return it != analysis.busyMinutesByEquipment.end() ? it->second : 0.0;
+}
+
 }  // namespace
 
 double MetricsEngine::operationTimeSum(const ProblemDefinition& problem,
@@ -22,33 +47,31 @@ double MetricsEngine::operationTimeSum(const ProblemDefinition& problem,
     double sum = 0.0;
     for (const auto& step : route.steps()) {
         if (const auto* op = findOperation(problem, step.operationId)) {
-            sum += op->durationMin;
+            const double busy =
+                op->cycleTimeMin > 0.0 ? op->cycleTimeMin : op->durationMin;
+            sum += busy;
         }
     }
     return sum;
 }
 
-double MetricsEngine::operationCostSum(const ProblemDefinition& problem,
-                                       const TestRoute& route) const {
+double MetricsEngine::operationMaterialsCost(const ProblemDefinition& problem,
+                                             const TestRoute& route) const {
     double sum = 0.0;
     for (const auto& step : route.steps()) {
         if (const auto* op = findOperation(problem, step.operationId)) {
-            // c_op + c_en (энергия × тариф задаётся в costEnergy)
-            sum += op->costOp + op->costEnergy;
+            sum += op->costOp;
         }
     }
     return sum;
 }
 
-double MetricsEngine::laborCost(const ProblemDefinition& problem, const TestRoute& route) const {
+double MetricsEngine::energyWorkCost(const ProblemDefinition& problem,
+                                     const TestRoute& route) const {
     double sum = 0.0;
-    for (const auto& s : problem.specimens) {
-        sum += s.prepLaborHours * problem.laborRatePerHour;
-    }
     for (const auto& step : route.steps()) {
         if (const auto* op = findOperation(problem, step.operationId)) {
-            // труд + обработка результатов (внутри h(o), брифинг)
-            sum += op->laborHours * problem.laborRatePerHour;
+            sum += op->costEnergy;
         }
     }
     return sum;
@@ -73,53 +96,22 @@ double MetricsEngine::operationLaborCost(const ProblemDefinition& problem,
     return sum;
 }
 
-double MetricsEngine::amortizationCost(
-    const ProblemDefinition& problem,
-    const std::unordered_map<std::string, double>& busyByEquipment) const {
+double MetricsEngine::amortizationCost(const ProblemDefinition& problem) const {
     double sum = 0.0;
-    for (const auto& e : problem.equipment) {
-        double busy = 0.0;
-        if (auto it = busyByEquipment.find(e.id); it != busyByEquipment.end()) {
-            busy = it->second;
-        }
-        sum += e.amortPerHour * (busy / 60.0);
-    }
-    return sum;
-}
-
-double MetricsEngine::averageLoad(
-    const ProblemDefinition& problem,
-    const std::unordered_map<std::string, double>& busyByEquipment) const {
-    double total = 0.0;
-    int count = 0;
     for (const auto& e : problem.equipment) {
         if (e.fundTimeMin <= 0.0) continue;
-        double busy = 0.0;
-        if (auto it = busyByEquipment.find(e.id); it != busyByEquipment.end()) {
-            busy = it->second;
-        }
-        total += busy / e.fundTimeMin;
-        ++count;
-    }
-    return count > 0 ? total / count : 0.0;
-}
-
-double MetricsEngine::objectiveK(const ObjectiveWeights& w, const VariantMetrics& m) const {
-    return w.alphaT * m.Tn + w.alphaC * m.Cn + w.alphaN * m.Nn + w.alphaL * m.Ln +
-           w.alphaEta * (2.0 - m.EtaN);
-}
-
-double MetricsEngine::cellPlacementCost(const ProblemDefinition& problem,
-                                        const TestRoute& route) const {
-    std::set<std::string> used;
-    for (const auto& step : route.steps()) {
-        used.insert(step.equipmentId);
-    }
-    double sum = 0.0;
-    for (const auto& e : problem.equipment) {
-        if (used.count(e.id)) sum += e.cellPlacementCost;
+        sum += e.amortPerHour * (e.fundTimeMin / 60.0);
     }
     return sum;
+}
+
+double MetricsEngine::averageLoad(const std::vector<EquipmentUtilization>& stats) const {
+    if (stats.empty()) return 0.0;
+    double total = 0.0;
+    for (const auto& u : stats) {
+        total += u.utilization;
+    }
+    return total / static_cast<double>(stats.size());
 }
 
 VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
@@ -134,64 +126,66 @@ VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
 
     const double opTime = operationTimeSum(problem, route);
 
-    m.T = prepTime + opTime + analysis.setupTimeMin + analysis.moveTimeMin;
+    m.T_sum = prepTime + opTime + analysis.setupTimeMin + analysis.moveTimeMin;
+    m.T = m.T_sum;
     m.N = analysis.setupCount;
     m.L = analysis.routeLengthSteps;
 
+    double tCycle = 0.0;
+    for (const auto& e : problem.equipment) {
+        tCycle = std::max(tCycle, busyMinutes(analysis, e.id));
+    }
+    m.T_cycle = tCycle;
+
     m.cost.prepLabor = prepLaborCost(problem);
-    m.cost.operations = operationCostSum(problem, route);
+    m.cost.operationMaterials = operationMaterialsCost(problem, route);
+    m.cost.energyWork = energyWorkCost(problem, route);
     m.cost.operationLabor = operationLaborCost(problem, route);
     m.cost.setup = analysis.setupCost;
-    m.cost.amortization = amortizationCost(problem, analysis.busyMinutesByEquipment);
-    // транспорт: время перемещения по ячейкам × ставка труда (зависит от размещения)
+    m.cost.energySetup = analysis.energySetupCost;
+    m.cost.amortization = amortizationCost(problem);
     m.cost.transport = (analysis.moveTimeMin / 60.0) * problem.laborRatePerHour;
-    m.cost.cellPlacement = cellPlacementCost(problem, route);
-    m.C = m.cost.total();
-    m.etaAvg = averageLoad(problem, analysis.busyMinutesByEquipment);
+    m.cost.area = areaOccupancyCost(problem, m.T_cycle);
 
-    if (problem.objectiveMode == ObjectiveMode::TotalCostRub) {
-        m.K = m.C;
+    std::unordered_map<std::string, double> workKwh;
+    std::unordered_map<std::string, double> workCost;
+    accumulateWorkEnergyByEquipment(problem, route, workKwh, workCost);
+
+    double maxBusy = 0.0;
+    for (const auto& e : problem.equipment) {
+        EquipmentUtilization u;
+        u.equipmentId = e.id;
+        u.testMin = analysis.testMinByEquipment.count(e.id) ? analysis.testMinByEquipment.at(e.id)
+                                                            : 0.0;
+        u.setupMin = analysis.setupMinByEquipment.count(e.id)
+                         ? analysis.setupMinByEquipment.at(e.id)
+                         : 0.0;
+        u.busyMin = busyMinutes(analysis, e.id);
+        if (u.busyMin > maxBusy) {
+            maxBusy = u.busyMin;
+            m.bottleneckEquipmentId = e.id;
+        }
+
+        if (m.T_cycle > 0.0) {
+            u.idleMin = std::max(0.0, m.T_cycle - u.busyMin);
+            u.utilization = std::min(1.0, u.busyMin / m.T_cycle);
+        }
+
+        u.energyWorkKwh = workKwh.count(e.id) ? workKwh[e.id] : 0.0;
+        u.costEnergyWork = workCost.count(e.id) ? workCost[e.id] : 0.0;
+        u.costSetup = analysis.setupCostByEquipment.count(e.id)
+                          ? analysis.setupCostByEquipment.at(e.id)
+                          : 0.0;
+        u.costAmort = e.fundTimeMin > 0.0 ? e.amortPerHour * (e.fundTimeMin / 60.0) : 0.0;
+
+        m.totalIdleMin += u.idleMin;
+        m.equipmentStats.push_back(u);
     }
+
+    m.etaAvg = averageLoad(m.equipmentStats);
+    m.C = m.cost.total();
 
     return m;
-}
-
-ComparisonRow MetricsEngine::compare(const ProblemDefinition& problem,
-                                     const TestRoute& baselineRoute,
-                                     const TestRoute& optimizedRoute) const {
-    ComparisonRow row;
-    row.baseline = compute(problem, baselineRoute);
-    row.optimized = compute(problem, optimizedRoute);
-
-    if (problem.objectiveMode == ObjectiveMode::WeightedK) {
-        auto normalize = [](VariantMetrics& cur, const VariantMetrics& base) {
-            cur.Tn = base.T > 0 ? cur.T / base.T : 1.0;
-            cur.Cn = base.C > 0 ? cur.C / base.C : 1.0;
-            cur.Nn = base.N > 0 ? static_cast<double>(cur.N) / base.N : 1.0;
-            cur.Ln = base.L > 0 ? cur.L / base.L : 1.0;
-            cur.EtaN = base.etaAvg > 0 ? cur.etaAvg / base.etaAvg : 1.0;
-        };
-
-        normalize(row.baseline, row.baseline);
-        normalize(row.optimized, row.baseline);
-
-        row.baseline.K = objectiveK(problem.weights, row.baseline);
-        row.optimized.K = objectiveK(problem.weights, row.optimized);
-    } else {
-        row.baseline.K = row.baseline.C;
-        row.optimized.K = row.optimized.C;
-    }
-
-    row.timeReductionPct = row.baseline.T > 0
-        ? (row.baseline.T - row.optimized.T) / row.baseline.T * 100.0
-        : 0.0;
-    row.costReductionPct = row.baseline.C > 0
-        ? (row.baseline.C - row.optimized.C) / row.baseline.C * 100.0
-        : 0.0;
-    row.objectiveReductionPct =
-        row.baseline.K > 0 ? (row.baseline.K - row.optimized.K) / row.baseline.K * 100.0 : 0.0;
-
-    return row;
 }
 
 }  // namespace lab

@@ -11,6 +11,7 @@ namespace lab {
 //   0 — пустая ячейка; 1..K — тип испытательного стенда; R — ячейка маршрута.
 // Возвращает текстовый блок: легенда + матрица.
 [[nodiscard]] std::string renderLayoutMatrix(const ProblemDefinition& problem,
-                                             const TestRoute& route);
+                                             const TestRoute& route,
+                                             double cycleTimeMin = 0.0);
 
 }  // namespace lab

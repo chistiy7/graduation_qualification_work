@@ -1,19 +1,16 @@
 #pragma once
 
 #include "model/lab_program_mode.hpp"
-#include "model/planning_strategy.hpp"
 #include "model/problem.hpp"
 
 namespace lab {
 
-// Сценарий: входные данные, режим программы, стратегии упорядочивания
+// Сценарий: входные данные и режим программы
 struct ScenarioBundle {
     std::string name;
     std::string description;
     LabProgramMode programMode = LabProgramMode::BasicMechanical;
     ProblemDefinition problem;
-    RouteOrderingStrategy baselineStrategy = RouteOrderingStrategy::BySpecimenThenOperation;
-    RouteOrderingStrategy optimizedStrategy = RouteOrderingStrategy::ByOperationThenSpecimen;
 };
 
 ScenarioBundle buildDemoSimple();

@@ -1,0 +1,20 @@
+{
+  "name": "demo_8_types_80",
+  "description": "80 образцов: по 10 на каждый из 8 видов испытаний",
+  "roomAreaM2": 100,
+  "cellSizeM": 2.0,
+  "batchSize": 80,
+  "laborRatePerHour": 450,
+  "energyTariffPerKwh": 6.5,
+  "specimenVolumeM3": 3.93e-6,
+  "groups": [
+    {"count": 10, "testType": "tension"},
+    {"count": 10, "testType": "torsion"},
+    {"count": 10, "testType": "bending"},
+    {"count": 10, "testType": "compression"},
+    {"count": 10, "testType": "fatigue"},
+    {"count": 10, "testType": "tension_torsion"},
+    {"count": 10, "testType": "bending_torsion"},
+    {"count": 10, "testType": "thermo_mech"}
+  ]
+}

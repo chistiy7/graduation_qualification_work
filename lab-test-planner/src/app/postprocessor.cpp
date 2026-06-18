@@ -10,51 +10,47 @@
 namespace lab {
 
 std::filesystem::path Postprocessor::exportTextReport(const ScenarioBundle& bundle,
-                                                     const OptimisationResult& result) const {
+                                                     const PlanResult& result) const {
     const auto path = outputDir() / ("report_" + bundle.name + ".txt");
     std::ofstream out(path);
     out << "Сценарий: " << bundle.name << "\n\n";
-    out << LabOptimiser::formatReport(result);
-    out << "\n" << renderLayoutMatrix(bundle.problem, result.optimizedRoute);
+    out << LabOptimiser::formatReport(result, bundle.problem);
+    out << "\n" << renderLayoutMatrix(bundle.problem, result.route, result.metrics.T_cycle);
     return path;
 }
 
-std::filesystem::path Postprocessor::exportCsvComparison(const OptimisationResult& result) const {
-    const auto path = outputDir() / "comparison.csv";
+std::filesystem::path Postprocessor::exportCsv(const PlanResult& result) const {
+    const auto path = outputDir() / "plan.csv";
     std::ofstream out(path);
-    const auto& b = result.comparison.baseline;
-    const auto& o = result.comparison.optimized;
-    const auto& c = result.comparison;
+    const auto& m = result.metrics;
+    const auto& c = m.cost;
 
     out << std::fixed << std::setprecision(4);
-    out << "metric,baseline,optimized,delta_pct\n";
-    out << "T_min," << b.T << "," << o.T << "," << c.timeReductionPct << "\n";
-    out << "C_rub," << b.C << "," << o.C << "," << c.costReductionPct << "\n";
-    out << "N," << b.N << "," << o.N << ","
-        << (b.N > 0 ? (b.N - o.N) * 100.0 / b.N : 0) << "\n";
-    out << "L_steps," << b.L << "," << o.L << ","
-        << (b.L > 0 ? (b.L - o.L) * 100.0 / b.L : 0) << "\n";
-    out << "eta_sr," << b.etaAvg << "," << o.etaAvg << ",0\n";
-    out << "objective," << b.K << "," << o.K << "," << c.objectiveReductionPct << "\n";
-
-    const auto& bc = b.cost;
-    const auto& oc = o.cost;
-    auto pct = [](double base, double opt) { return base > 0 ? (base - opt) / base * 100.0 : 0.0; };
-    out << "cost_prep_labor," << bc.prepLabor << "," << oc.prepLabor << ","
-        << pct(bc.prepLabor, oc.prepLabor) << "\n";
-    out << "cost_operations," << bc.operations << "," << oc.operations << ","
-        << pct(bc.operations, oc.operations) << "\n";
-    out << "cost_operation_labor," << bc.operationLabor << "," << oc.operationLabor << ","
-        << pct(bc.operationLabor, oc.operationLabor) << "\n";
-    out << "cost_setup," << bc.setup << "," << oc.setup << "," << pct(bc.setup, oc.setup) << "\n";
-    out << "cost_amortization," << bc.amortization << "," << oc.amortization << ","
-        << pct(bc.amortization, oc.amortization) << "\n";
-    out << "cost_transport," << bc.transport << "," << oc.transport << ","
-        << pct(bc.transport, oc.transport) << "\n";
-    out << "cost_cell_placement," << bc.cellPlacement << "," << oc.cellPlacement << ","
-        << pct(bc.cellPlacement, oc.cellPlacement) << "\n";
-    out << "cost_without_placement," << bc.withoutPlacement() << "," << oc.withoutPlacement() << ","
-        << pct(bc.withoutPlacement(), oc.withoutPlacement()) << "\n";
+    out << "metric,value\n";
+    out << "T_sum_min," << m.T_sum << "\n";
+    out << "T_cycle_min," << m.T_cycle << "\n";
+    out << "program_work_time_min," << result.efficiency.time.workTimeMin << "\n";
+    out << "program_time_prep_min," << result.efficiency.time.prepMin << "\n";
+    out << "program_time_test_min," << result.efficiency.time.testMin << "\n";
+    out << "program_time_setup_min," << result.efficiency.time.setupMin << "\n";
+    out << "program_time_move_min," << result.efficiency.time.moveMin << "\n";
+    out << "program_parallelism_index," << result.efficiency.time.parallelismIndex << "\n";
+    out << "C_rub," << m.C << "\n";
+    out << "N," << m.N << "\n";
+    out << "L_steps," << m.L << "\n";
+    out << "eta_avg_pct," << (m.etaAvg * 100.0) << "\n";
+    out << "bottleneck," << m.bottleneckEquipmentId << "\n";
+    out << "cost_prep_labor," << c.prepLabor << "\n";
+    out << "cost_operation_materials," << c.operationMaterials << "\n";
+    out << "cost_energy_work," << c.energyWork << "\n";
+    out << "cost_operation_labor," << c.operationLabor << "\n";
+    out << "cost_setup," << c.setup << "\n";
+    out << "cost_energy_setup," << c.energySetup << "\n";
+    out << "cost_amortization," << c.amortization << "\n";
+    out << "total_idle_min," << m.totalIdleMin << "\n";
+    out << "cost_transport," << c.transport << "\n";
+    out << "cost_area," << c.area << "\n";
+    out << "cost_total," << c.total() << "\n";
     return path;
 }
 
