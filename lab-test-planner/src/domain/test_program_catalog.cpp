@@ -36,11 +36,12 @@ TestProgramDef makeProgram(TestOperationType type, std::string equipId, std::str
 
 std::vector<TestProgramDef> buildPrograms() {
     return {
-        // 1. e_tension
-        makeProgram(TestOperationType::Tension, "e_tension", "tension",
+        // 1. e_axial_torsion / tension (универсальный стенд)
+        makeProgram(TestOperationType::Tension, "e_axial_torsion", "tension",
                     "Static tensile test to fracture", ProgramTimeModel::RegulatedTime, 20.0,
-                    1.5, 10.0, 0.5, "fracture OR max_strain OR load_drop", true,
-                    "стандарт (ГОСТ 1497-84) + расчётная технологическая база ПО", 600.0),
+                    1.8, 10.0, 0.8, "fracture OR max_strain OR load_drop", true,
+                    "стандарт (ГОСТ 1497-84) + паспорт Instron 8874 + расчётная технологическая база ПО",
+                    600.0),
 
         // 2. e_compression
         makeProgram(TestOperationType::Compression, "e_compression", "compression",
@@ -48,11 +49,12 @@ std::vector<TestProgramDef> buildPrograms() {
                     0.5, "target_force OR target_strain OR instability OR max_time", true,
                     "стандарт (ГОСТ 25.503-97) + расчётная технологическая база ПО", 500.0),
 
-        // 3. e_torsion
-        makeProgram(TestOperationType::Torsion, "e_torsion", "torsion",
+        // 3. e_axial_torsion / torsion (универсальный стенд)
+        makeProgram(TestOperationType::Torsion, "e_axial_torsion", "torsion",
                     "Static torsion test to fracture", ProgramTimeModel::RegulatedTime, 15.0,
-                    1.0, 10.0, 0.5, "fracture OR target_angle OR torque_drop OR max_time", true,
-                    "стандарт (ГОСТ 3565-80) + расчётная технологическая база ПО", 550.0),
+                    1.6, 10.0, 0.8, "fracture OR target_angle OR torque_drop OR max_time", true,
+                    "стандарт (ГОСТ 3565-80) + паспорт Instron 8874 + расчётная технологическая база ПО",
+                    550.0),
 
         // 4. e_bending
         makeProgram(TestOperationType::Bending, "e_bending", "bending", "Static bending test",
@@ -67,12 +69,12 @@ std::vector<TestProgramDef> buildPrograms() {
                     "стандарт (ГОСТ 25.502-79) + расчётная технологическая база ПО", 300.0, 0.0,
                     100000, 10.0),
 
-        // 6. e_tension_torsion
-        makeProgram(TestOperationType::TensionPlusTorsion, "e_tension_torsion", "tension_torsion",
+        // 6. e_axial_torsion / tension_torsion (универсальный стенд)
+        makeProgram(TestOperationType::TensionPlusTorsion, "e_axial_torsion", "tension_torsion",
                     "Combined axial tension and torsion test", ProgramTimeModel::RegulatedTime,
                     30.0, 2.3, 15.0, 0.8,
                     "fracture OR target_axial_strain_and_twist OR load_drop", true,
-                    "расчётная технологическая база ПО", 630.0),
+                    "паспорт Instron 8874 + расчётная технологическая база ПО", 630.0),
 
         // 7. e_bending_torsion
         makeProgram(TestOperationType::BendingPlusTorsion, "e_bending_torsion", "bending_torsion",

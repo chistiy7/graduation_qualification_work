@@ -27,18 +27,16 @@ TestKind kindForOperation(const TestOperationDef& def) {
 StandEconomicsDefaults defaultStandEconomics(StandType type) {
     constexpr double kCell = 5000.0;
     switch (type) {
-    case StandType::TensionStand:
-        return {200.0, 2000.0, 240.0, kCell};
+    case StandType::UniversalAxialTorsion:
+        // Единая амортизация универсальной осевой-крутильной машины (Instron 8874):
+        // одна физическая установка вместо трёх → одна статья C_аморт.
+        return {220.0, 2800.0, 280.0, kCell};
     case StandType::CompressionStand:
         return {200.0, 2000.0, 240.0, kCell};
-    case StandType::TorsionMachine:
-        return {200.0, 2500.0, 240.0, kCell};
     case StandType::BendingRig:
         return {220.0, 1800.0, 200.0, kCell};
     case StandType::FatigueStand:
         return {300.0, 3000.0, 480.0, kCell * 1.5};
-    case StandType::AxialTorsionRig:
-        return {220.0, 2800.0, 280.0, kCell};
     case StandType::BendingTorsionRig:
         return {220.0, 2600.0, 260.0, kCell};
     case StandType::ThermomechanicalStand:

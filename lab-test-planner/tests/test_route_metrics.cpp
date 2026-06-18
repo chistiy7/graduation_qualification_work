@@ -32,12 +32,12 @@ bool testCatalog8ProgramParams() {
         double energyKwh;
     };
     const Expected expected[] = {
-        {lab::TestOperationType::Tension, "e_tension", 20.0, 1.5, 0.50},
+        {lab::TestOperationType::Tension, "e_axial_torsion", 20.0, 1.8, 0.60},
         {lab::TestOperationType::Compression, "e_compression", 15.0, 1.5, 0.375},
-        {lab::TestOperationType::Torsion, "e_torsion", 15.0, 1.0, 0.25},
+        {lab::TestOperationType::Torsion, "e_axial_torsion", 15.0, 1.6, 0.40},
         {lab::TestOperationType::Bending, "e_bending", 15.0, 1.5, 0.375},
         {lab::TestOperationType::Fatigue, "e_fatigue", 166.7, 5.0, 13.89},
-        {lab::TestOperationType::TensionPlusTorsion, "e_tension_torsion", 30.0, 2.3, 1.15},
+        {lab::TestOperationType::TensionPlusTorsion, "e_axial_torsion", 30.0, 2.3, 1.15},
         {lab::TestOperationType::BendingPlusTorsion, "e_bending_torsion", 30.0, 2.3, 1.15},
         {lab::TestOperationType::Thermomechanical, "e_thermo_mech", 100.0, 10.0, 16.67},
     };

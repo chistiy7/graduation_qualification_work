@@ -17,14 +17,14 @@ struct DirectionalBuffer {
     int side  = 1;
 };
 
-// v1: 8 стендов — один основной вид испытания на стенд (id = e_*).
+// v2 (редизайн): 6 стендов. Растяжение, кручение и совмещённое растяжение+кручение
+// объединены в ОДИН универсальный стенд (e_axial_torsion) — переналадка между этими
+// программами становится реальной и демонстрируемой (матрица переходов A→B).
 enum class StandType {
-    TensionStand,           // e_tension
+    UniversalAxialTorsion,  // e_axial_torsion (растяжение / кручение / растяжение+кручение)
     CompressionStand,       // e_compression
-    TorsionMachine,         // e_torsion
     BendingRig,             // e_bending
     FatigueStand,           // e_fatigue
-    AxialTorsionRig,        // e_tension_torsion
     BendingTorsionRig,      // e_bending_torsion
     ThermomechanicalStand,  // e_thermo_mech
 };
