@@ -1,5 +1,8 @@
 #include "engine/program_efficiency.hpp"
 
+#include "domain/schedule.hpp"
+#include "engine/scheduler.hpp"
+
 #include <algorithm>
 
 namespace lab {
@@ -33,16 +36,6 @@ double prepTimeSum(const ProblemDefinition& problem) {
     return sum;
 }
 
-double cycleTimeMin(const ProblemDefinition& problem, const RouteAnalysis& analysis) {
-    double tCycle = 0.0;
-    for (const auto& e : problem.equipment) {
-        const auto it = analysis.busyMinutesByEquipment.find(e.id);
-        const double busy = it != analysis.busyMinutesByEquipment.end() ? it->second : 0.0;
-        tCycle = std::max(tCycle, busy);
-    }
-    return tCycle;
-}
-
 }  // namespace
 
 ProgramEfficiencyMetrics ProgramEfficiencyEngine::compute(
@@ -53,15 +46,18 @@ ProgramEfficiencyMetrics ProgramEfficiencyEngine::compute(
 ProgramEfficiencyMetrics ProgramEfficiencyEngine::compute(const ProblemDefinition& problem,
                                                           const TestRoute& route,
                                                           const RouteAnalysis& analysis) const {
+    // DES-расписание даёт реальный цикл (makespan) и фактический путь оператора.
+    const Schedule sched = Scheduler{}.build(problem, route);
+
     ProgramEfficiencyMetrics out;
     auto& t = out.time;
 
     t.prepMin = prepTimeSum(problem);
     t.testMin = operationTimeSum(problem, route);
     t.setupMin = analysis.setupTimeMin;
-    t.moveMin = analysis.moveTimeMin;
+    t.moveMin = sched.operatorTravelSteps * problem.minutesPerGridStep;
     t.workTimeMin = t.prepMin + t.testMin + t.setupMin + t.moveMin;
-    t.cycleMin = cycleTimeMin(problem, analysis);
+    t.cycleMin = sched.makespanMin;
 
     if (t.workTimeMin > 0.0) {
         t.parallelismIndex = std::min(1.0, t.cycleMin / t.workTimeMin);
