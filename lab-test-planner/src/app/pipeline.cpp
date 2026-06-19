@@ -18,6 +18,10 @@ void applyLayoutIfNeeded(ScenarioBundle& bundle, PipelineOutput& out) {
     p = layout.problem;
     out.layoutNote = layout.note;
     out.layoutEvaluated = layout.evaluated;
+    out.autoArea = layout.autoArea;
+    out.gridRows = layout.gridRows;
+    out.gridCols = layout.gridCols;
+    out.roomAreaM2 = layout.roomAreaM2;
 }
 
 }  // namespace

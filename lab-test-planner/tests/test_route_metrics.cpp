@@ -120,10 +120,20 @@ bool testPipelineMinAreaWhenAreaNotGiven() {
     for (const auto& e : p.equipment) ok &= !e.cellId.empty();
     ok &= out.result.metrics.C > 0.0;
 
+    // Проброс режима минимальной площади в PipelineOutput (для GUI).
+    ok &= out.autoArea;
+    ok &= out.gridRows == p.gridRows && out.gridCols == p.gridCols;
+    ok &= out.roomAreaM2 > 0.0;
+
+    // DES-расписание выбранного маршрута присутствует (источник для Ганта в GUI).
+    ok &= !out.result.schedule.phases.empty();
+    ok &= out.result.schedule.makespanMin > 0.0;
+
     if (!ok) {
         std::cerr << "Min-area pipeline FAILED: cells=" << p.laboratory.cells().size()
                   << " grid=" << p.gridRows << "x" << p.gridCols
-                  << " stands=" << p.equipment.size() << "\n";
+                  << " stands=" << p.equipment.size() << " autoArea=" << out.autoArea
+                  << " phases=" << out.result.schedule.phases.size() << "\n";
     }
     return ok;
 }
