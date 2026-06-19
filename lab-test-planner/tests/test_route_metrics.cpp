@@ -94,6 +94,40 @@ bool testPipelineAppliesLayoutForUserInput() {
     return true;
 }
 
+bool testPipelineMinAreaWhenAreaNotGiven() {
+    // Площадь НЕ задана (roomAreaM2 <= 0): САПР проектирует от минимальной
+    // необходимой площади — наращивает сетку до первой допустимой раскладки.
+    // Берём все виды испытаний (жёсткие зоны безопасности усталости/термомеха),
+    // которые не помещаются на тесную фиксированную сетку.
+    lab::ScenarioInput in;
+    in.roomAreaM2 = 0.0;  // сигнал режима минимальной площади
+    in.laborRatePerHour = 450.0;
+    in.energyTariffPerKwh = 6.5;
+    for (const auto t : lab::selectableTestTypes()) {
+        in.groups.push_back({1, t});
+    }
+    in.batchSize = static_cast<int>(in.groups.size());
+
+    lab::Pipeline pipeline;
+    const auto out = pipeline.runFromInput(in, false);
+
+    bool ok = true;
+    const auto& p = out.bundle.problem;
+    ok &= !p.laboratory.cells().empty();           // раскладка найдена
+    ok &= p.gridRows > 0 && p.gridCols > 0;        // сетка спроектирована
+    ok &= p.gridRows * p.gridCols >= static_cast<int>(p.equipment.size());
+    // Все стенды получили координаты (нет пустых cellId).
+    for (const auto& e : p.equipment) ok &= !e.cellId.empty();
+    ok &= out.result.metrics.C > 0.0;
+
+    if (!ok) {
+        std::cerr << "Min-area pipeline FAILED: cells=" << p.laboratory.cells().size()
+                  << " grid=" << p.gridRows << "x" << p.gridCols
+                  << " stands=" << p.equipment.size() << "\n";
+    }
+    return ok;
+}
+
 bool testSetupOnModeChange() {
     lab::ProblemDefinition p;
     lab::LabEquipment eq;
@@ -605,6 +639,8 @@ int main() {
     std::cout << "Catalog 8 program params OK\n";
     if (!testPipelineAppliesLayoutForUserInput()) return EXIT_FAILURE;
     std::cout << "Pipeline layout for user input OK\n";
+    if (!testPipelineMinAreaWhenAreaNotGiven()) return EXIT_FAILURE;
+    std::cout << "Min-area design when area not given OK\n";
     if (!testSetupOnModeChange()) return EXIT_FAILURE;
     std::cout << "Setup mode-change OK\n";
     if (!testUniversalStandChangeover()) return EXIT_FAILURE;

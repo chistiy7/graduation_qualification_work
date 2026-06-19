@@ -10,7 +10,9 @@ namespace {
 void applyLayoutIfNeeded(ScenarioBundle& bundle, PipelineOutput& out) {
     auto& p = bundle.problem;
     if (!p.laboratory.cells().empty()) return;
-    if (p.gridRows <= 0 || p.gridCols <= 0 || p.equipment.empty()) return;
+    if (p.equipment.empty()) return;
+    // gridRows/gridCols<=0 — допустимо: режим минимальной площади (optimizeLayout
+    // сам нарастит сетку до первой допустимой раскладки).
 
     const auto layout = optimizeLayout(p);
     p = layout.problem;

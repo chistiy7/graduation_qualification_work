@@ -133,8 +133,15 @@ ScenarioBundle buildFromInput(const ScenarioInput& in) {
     p.electricityTariffPerKwh = in.energyTariffPerKwh;
     p.gridCellSizeM = in.cellSizeM;
     p.minutesPerGridStep = 1.0;
-    p.gridRows = gridRowsFromInput(in);
-    p.gridCols = gridColsFromInput(in);
+    if (in.roomAreaM2 > 0.0) {
+        p.gridRows = gridRowsFromInput(in);
+        p.gridCols = gridColsFromInput(in);
+    } else {
+        // Площадь не задана → САПР проектирует от минимальной необходимой площади
+        // (gridRows/gridCols=0 — сигнал режима минимальной площади для optimizeLayout).
+        p.gridRows = 0;
+        p.gridCols = 0;
+    }
 
     std::vector<TestOperationType> allOps;
     for (const auto& g : in.groups) {
