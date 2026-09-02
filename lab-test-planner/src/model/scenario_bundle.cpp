@@ -19,8 +19,8 @@ ScenarioBundle buildDemoSimple() {
     };
     req.operationParams[TestOperationType::Tension] = {20.0, 100.0, 150.0, 0.15};
     req.operationParams[TestOperationType::Torsion] = {25.0, 120.0, 180.0, 0.18};
-    req.standParams[StandType::TensionStand] = {8.0, 150.0, 1500.0, 120.0, 5000.0, 0, 0};
-    req.standParams[StandType::TorsionMachine] = {8.0, 150.0, 1800.0, 120.0, 5000.0, 0, 3};
+    // Растяжение и кручение выполняет один универсальный стенд → одна запись параметров.
+    req.standParams[StandType::UniversalAxialTorsion] = {8.0, 150.0, 1800.0, 120.0, 5000.0, 0, 0};
     return buildFromProgram(req);
 }
 
@@ -34,8 +34,8 @@ ScenarioBundle buildDemoTwoSpecimens() {
         {"s1", SpecimenRole::Primary, 10.0, 0.15, {TestOperationType::Tension}},
         {"s2", SpecimenRole::Primary, 10.0, 0.15, {TestOperationType::Torsion}},
     };
-    req.standParams[StandType::TensionStand] = {10.0, 200.0, 2000.0, 240.0, 5000.0, 0, 0};
-    req.standParams[StandType::TorsionMachine] = {10.0, 200.0, 2500.0, 240.0, 5000.0, 0, 4};
+    // Растяжение и кручение выполняет один универсальный стенд → одна запись параметров.
+    req.standParams[StandType::UniversalAxialTorsion] = {10.0, 200.0, 2500.0, 240.0, 5000.0, 0, 0};
     return buildFromProgram(req);
 }
 

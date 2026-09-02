@@ -1,7 +1,9 @@
 #include "engine/metrics.hpp"
 
+#include "domain/schedule.hpp"
 #include "engine/layout_area.hpp"
 #include "engine/route_analysis.hpp"
+#include "engine/scheduler.hpp"
 
 #include <unordered_map>
 
@@ -33,11 +35,6 @@ void accumulateWorkEnergyByEquipment(
         energyKwh[step.equipmentId] += op->energyKwh;
         costRub[step.equipmentId] += op->costEnergy;
     }
-}
-
-double busyMinutes(const RouteAnalysis& analysis, const std::string& equipmentId) {
-    const auto it = analysis.busyMinutesByEquipment.find(equipmentId);
-    return it != analysis.busyMinutesByEquipment.end() ? it->second : 0.0;
 }
 
 }  // namespace
@@ -117,6 +114,26 @@ double MetricsEngine::averageLoad(const std::vector<EquipmentUtilization>& stats
 VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
                                       const TestRoute& route) const {
     const RouteAnalysis analysis = RouteAnalyzer{}.analyze(problem, route);
+    // DES-расписание: реальный T_cycle (makespan) с перекрытием автономных прогонов,
+    // путь оператора L и счёт переналадок N. Себестоимостные рычаги (C_setup,
+    // C_energy_setup) берём из RouteAnalyzer — они согласованы с фазой 2.
+    const Schedule sched = Scheduler{}.build(problem, route);
+
+    // Раскладка фаз расписания по стендам: настройка / прогон / снятие.
+    std::unordered_map<std::string, double> schedTestMin;
+    std::unordered_map<std::string, double> schedSetupMin;
+    for (const auto& ph : sched.phases) {
+        const double dur = ph.endMin - ph.startMin;
+        if (ph.phase == SchedulePhase::Setup) {
+            schedSetupMin[ph.equipmentId] += dur;
+        } else if (ph.phase == SchedulePhase::Run) {
+            schedTestMin[ph.equipmentId] += dur;
+        }
+    }
+    std::unordered_map<std::string, double> schedBusyMin;
+    for (const auto& [id, busy] : sched.standBusyMin) {
+        schedBusyMin[id] = busy;
+    }
 
     VariantMetrics m;
     double prepTime = 0.0;
@@ -125,17 +142,13 @@ VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
     }
 
     const double opTime = operationTimeSum(problem, route);
+    const double moveTime = sched.operatorTravelSteps * problem.minutesPerGridStep;
 
-    m.T_sum = prepTime + opTime + analysis.setupTimeMin + analysis.moveTimeMin;
+    m.T_sum = prepTime + opTime + analysis.setupTimeMin + moveTime;
     m.T = m.T_sum;
-    m.N = analysis.setupCount;
-    m.L = analysis.routeLengthSteps;
-
-    double tCycle = 0.0;
-    for (const auto& e : problem.equipment) {
-        tCycle = std::max(tCycle, busyMinutes(analysis, e.id));
-    }
-    m.T_cycle = tCycle;
+    m.N = sched.changeoverCount;
+    m.L = sched.operatorTravelSteps;
+    m.T_cycle = sched.makespanMin;  // реальный цикл партии из DES-ядра
 
     m.cost.prepLabor = prepLaborCost(problem);
     m.cost.operationMaterials = operationMaterialsCost(problem, route);
@@ -144,7 +157,7 @@ VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
     m.cost.setup = analysis.setupCost;
     m.cost.energySetup = analysis.energySetupCost;
     m.cost.amortization = amortizationCost(problem);
-    m.cost.transport = (analysis.moveTimeMin / 60.0) * problem.laborRatePerHour;
+    m.cost.transport = (moveTime / 60.0) * problem.laborRatePerHour;
     m.cost.area = areaOccupancyCost(problem, m.T_cycle);
 
     std::unordered_map<std::string, double> workKwh;
@@ -155,12 +168,9 @@ VariantMetrics MetricsEngine::compute(const ProblemDefinition& problem,
     for (const auto& e : problem.equipment) {
         EquipmentUtilization u;
         u.equipmentId = e.id;
-        u.testMin = analysis.testMinByEquipment.count(e.id) ? analysis.testMinByEquipment.at(e.id)
-                                                            : 0.0;
-        u.setupMin = analysis.setupMinByEquipment.count(e.id)
-                         ? analysis.setupMinByEquipment.at(e.id)
-                         : 0.0;
-        u.busyMin = busyMinutes(analysis, e.id);
+        u.testMin = schedTestMin.count(e.id) ? schedTestMin.at(e.id) : 0.0;
+        u.setupMin = schedSetupMin.count(e.id) ? schedSetupMin.at(e.id) : 0.0;
+        u.busyMin = schedBusyMin.count(e.id) ? schedBusyMin.at(e.id) : 0.0;
         if (u.busyMin > maxBusy) {
             maxBusy = u.busyMin;
             m.bottleneckEquipmentId = e.id;

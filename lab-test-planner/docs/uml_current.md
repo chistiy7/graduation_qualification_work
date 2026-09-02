@@ -1,6 +1,6 @@
 # UML — текущая архитектура LabPlanner
 
-Сгенерировано: 2026-06-09. Только `.hpp`-заголовки; поля — участвующие в расчёте T, C, N, L, η.
+Обновлено: 2026-06-19. Заголовки `src/**/*.hpp` + Qt GUI (`src/qt/`). Поля — участвующие в расчёте T, C, N, L, η и отображении результата.
 
 ---
 
@@ -88,24 +88,30 @@ classDiagram
 
     class CostBreakdown {
         +prepLabor : double
-        +operations : double
+        +operationMaterials : double
+        +energyWork : double
         +operationLabor : double
         +setup : double
+        +energySetup : double
         +amortization : double
         +transport : double
-        +cellPlacement : double
+        +area : double
         +total() double
-        +withoutPlacement() double
+        +withoutArea() double
     }
 
     class VariantMetrics {
+        +T_sum : double
+        +T_cycle : double
         +T : double
         +C : double
         +N : int
         +L : double
         +etaAvg : double
-        +K : double
+        +bottleneckEquipmentId : string
         +cost : CostBreakdown
+        +totalIdleMin : double
+        +equipmentStats : vector~EquipmentUtilization~
     }
 
     class ProblemDefinition {
@@ -134,7 +140,7 @@ classDiagram
 
     class SpecimenGroup {
         +count : int
-        +testTypes : vector~TestOperationType~
+        +testType : TestOperationType
     }
 
     class ScenarioInput {
@@ -183,7 +189,9 @@ classDiagram
     class PlanResult {
         +route : TestRoute
         +metrics : VariantMetrics
+        +efficiency : ProgramEfficiencyMetrics
         +orderingNote : string
+        +energyWarnings : vector~string~
     }
 
     class LabOptimiser {
@@ -221,9 +229,46 @@ classDiagram
 
     class Pipeline {
         +run(ScenarioBundle, export) PipelineOutput
+        +runFromInput(ScenarioInput, export) PipelineOutput
         -preprocessor_ : Preprocessor
         -optimiser_ : LabOptimiser
         -postprocessor_ : Postprocessor
+    }
+
+    class PipelineOutput {
+        +bundle : ScenarioBundle
+        +result : PlanResult
+        +reportPath : path
+        +csvPath : path
+        +layoutNote : string
+        +layoutEvaluated : long long
+        +elapsedMs : double
+    }
+
+    class ScenarioRunner {
+        <<namespace functions>>
+        +formatScenarioRunOutput(PipelineOutput, ScenarioInput*) string
+        +runUserScenario(ScenarioInput, export) PipelineOutput
+    }
+
+    class MainWindow {
+        +onCalculate()
+        +onOpenJson()
+        +onSaveJson()
+    }
+
+    class InputPage {
+        +collectInput(ScenarioInput, error) bool
+        +presetId() string
+    }
+
+    class ResultsPage {
+        +showOutput(PipelineOutput, ScenarioInput*)
+    }
+
+    class LayoutGridWidget {
+        +setLayoutData(ProblemDefinition, TestRoute)
+        +paintEvent()
     }
 
     %% ── Связи ───────────────────────────────────────────────────────
@@ -274,6 +319,20 @@ classDiagram
     Pipeline *-- LabOptimiser
     Pipeline *-- Postprocessor
     Pipeline ..> ScenarioBundle : «receives»
+    Pipeline ..> PipelineOutput : «returns»
+    PipelineOutput "1" *-- "1" ScenarioBundle : bundle
+    PipelineOutput "1" *-- "1" PlanResult : result
+
+    ScenarioRunner ..> Pipeline : «uses»
+    ScenarioRunner ..> PipelineOutput : «formats»
+
+    MainWindow *-- InputPage
+    MainWindow *-- ResultsPage
+    ResultsPage *-- LayoutGridWidget
+    MainWindow ..> ScenarioRunner : «runUserScenario»
+    ResultsPage ..> PipelineOutput : «displays»
+    LayoutGridWidget ..> ProblemDefinition : «reads»
+    LayoutGridWidget ..> TestRoute : «reads»
 ```
 
 ---
@@ -283,56 +342,51 @@ classDiagram
 ```mermaid
 flowchart LR
 
-    subgraph INPUT["Ввод (interactive.cpp)"]
-        UI["ScenarioInput\n― roomAreaM2\n― batchSize\n― groups[]"]
+    subgraph INPUT["Ввод (CLI / Qt InputPage)"]
+        UI["ScenarioInput\n― roomAreaM2\n― batchSize\n― groups[]\n― laborRate, tariff, V"]
     end
 
-    subgraph BUILD["Сборка постановки (buildFromInput)"]
-        B1["Операции D\n TestStage {durationMin, costOp,\n costEnergy, laborHours}"]
-        B2["Стенды E\n LabEquipment {setupTimeMin, setupCost,\n amortPerHour, cellPlacementCost,\n forbiddenBufferCells=1}"]
-        B3["Партия S\n Specimen {prepTimeMin=10,\n prepLaborHours=0.15}"]
-        B4["Req, Cap, Pred\n (required / capable / precedence)"]
+    subgraph BUILD["Сборка (buildFromInput)"]
+        B1["Операции D\n TestStage"]
+        B2["Стенды E\n LabEquipment"]
+        B3["Партия S\n Specimen"]
+        B4["Req, Cap, Pred"]
     end
 
-    subgraph LAYOUT["Оптимизатор размещения (optimizeLayout)"]
-        L1["Сетка G: rows×cols = round(площадь/ячейка²)\n Буфер 1 ячейка → LabCell.kind=Buffer"]
-        L2["Перебор / эвристика\n min C по всем позициям"]
-        L3["Laboratory: cellById_, equipmentCell_\n LabEquipment.cellId → назначен"]
+    subgraph LAYOUT["Размещение (Pipeline → optimizeLayout)"]
+        L1["Сетка G: rows×cols\n DirectionalBuffer (ГОСТ §2.2)"]
+        L2["эвристика / перебор\n min C"]
+        L3["Laboratory + cellId"]
     end
 
     subgraph PREPROCESS["Препроцессор"]
-        P1["Preprocessor.ensureValid()\n ― Req(s,o) → capable(e,o)\n ― cellId ≠ empty"]
+        P1["Preprocessor.ensureValid()"]
     end
 
-    subgraph CORE["Ядро расчёта"]
-        R1["RoutePlanner\n buildGroupedRoute / buildBaselineRoute\n → TestRoute {RouteStep[]}"]
-        R2["RouteAnalyzer.analyze()\n → setupCount N\n → routeLengthSteps L\n → moveTimeMin\n → busyMinutes[]"]
-        R3["MetricsEngine.compute()\n → T = prepTime + opTime + setupTime + moveTime\n → C = CostBreakdown.total()\n → η = avg(busy/fundTime)\n → K = C (или взвешенное K)"]
-        R4["StandStateAnalyzer\n → матрица состояний\n → validatePrecedence"]
+    subgraph CORE["Ядро (LabOptimiser)"]
+        R1["RoutePlanner\n 2 стратегии → TestRoute"]
+        R2["RouteAnalyzer → N, L, t_busy"]
+        R3["MetricsEngine → T_sum, T_cycle, C"]
+        R4["StandStateAnalyzer"]
     end
 
-    subgraph RESULT["Результат (PlanResult)"]
-        OUT["PlanResult\n ― route : TestRoute\n ― metrics.T, C, N, L, η, K\n ― metrics.cost {prepLabor, operations,\n   operationLabor, setup, amortization,\n   transport, cellPlacement}"]
+    subgraph RESULT["PipelineOutput"]
+        OUT["PlanResult + bundle\n reportPath, csvPath\n layoutNote, elapsedMs"]
     end
 
-    subgraph EXPORT["Постпроцессор (Postprocessor)"]
-        E1["formatReport → консоль"]
-        E2["exportTextReport → report_*.txt"]
-        E3["exportCsv → plan.csv"]
-        E4["renderLayoutMatrix → карта (0/X/N/R)"]
+    subgraph EXPORT["Вывод"]
+        E1["formatScenarioRunOutput\n CLI + GUI «Полный отчёт»"]
+        E2["Postprocessor → report_*.txt"]
+        E3["Postprocessor → plan.csv"]
+        E4["LayoutGridWidget / renderLayoutMatrix"]
+        E5["ResultsPage: таблицы C, стенды, маршрут"]
     end
 
     UI --> BUILD
-    BUILD --> B1
-    BUILD --> B2
-    BUILD --> B3
-    BUILD --> B4
+    BUILD --> B1 & B2 & B3 & B4
     B1 & B2 & B3 & B4 --> LAYOUT
-    LAYOUT --> L1 --> L2 --> L3
-    L3 --> PREPROCESS
-    PREPROCESS --> P1 --> CORE
-    CORE --> R1 --> R2 --> R3
-    R3 --> R4
+    LAYOUT --> PREPROCESS --> CORE
+    CORE --> R1 --> R2 --> R3 --> R4
     R3 --> RESULT
     RESULT --> EXPORT
 ```
@@ -343,13 +397,14 @@ flowchart LR
 
 | Блок | Ответственный класс | Ключевые данные на входе | Ключевые данные на выходе |
 |---|---|---|---|
-| Ввод | `ScenarioInput` + `interactive.cpp` | площадь, группы | `ScenarioBundle` без координат |
+| Ввод | `ScenarioInput` + `interactive.cpp` / `InputPage` | площадь, группы | `ScenarioInput` |
+| Связка | `Pipeline::runFromInput` | `ScenarioInput` | `PipelineOutput` |
 | Сборка | `buildFromInput()` | `ScenarioInput.groups[]` | `ProblemDefinition` (Req, Cap, Pred) |
-| Размещение | `optimizeLayout()` | `ProblemDefinition` без cellId | `ProblemDefinition` с cellId + `Laboratory` |
+| Размещение | `optimizeLayout()` (в `Pipeline`) | `ProblemDefinition` без cellId | `ProblemDefinition` + `Laboratory` |
 | Проверка | `Preprocessor` | `ScenarioBundle` | исключение или ok |
-| Маршрут | `RoutePlanner` | `ProblemDefinition` (Req, Cap, Pred) | `TestRoute` |
-| Анализ | `RouteAnalyzer` | `TestRoute` + `Laboratory.manhattanDistance` | N, L, moveTimeMin, busyMin |
-| Метрики | `MetricsEngine` | `ProblemDefinition` + `RouteAnalysis` | T, C (+разложение), η, K |
+| Маршрут | `RoutePlanner` + `LabOptimiser` | `ProblemDefinition` | `TestRoute` (лучший по C) |
+| Анализ | `RouteAnalyzer` | `TestRoute` + `Laboratory` | N, L, moveTimeMin, busyMin |
+| Метрики | `MetricsEngine` | `ProblemDefinition` + маршрут | T_sum, T_cycle, C, η |
 | Состояния | `StandStateAnalyzer` | `TestRoute` | `StandStateMatrix` |
-| Оптимизатор | `LabOptimiser.plan()` | `ProblemDefinition` | `PlanResult` (best по C) |
-| Экспорт | `Postprocessor` | `PlanResult` + `ProblemDefinition` | txt, csv, карта |
+| Экспорт | `Postprocessor` + `scenario_runner` | `PipelineOutput` | txt, csv, текст отчёта |
+| GUI | `ResultsPage`, `LayoutGridWidget` | `PipelineOutput` | таблицы, карта, полный текст |

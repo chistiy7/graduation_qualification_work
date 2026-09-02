@@ -6,24 +6,20 @@ namespace {
 
 std::vector<StandDef> buildStands() {
   return {
-      {StandType::TensionStand, "e_tension", "Стенд испытания на растяжение",
-       {TestOperationType::Tension}, false, false, {1, 0, 1}, 15.0},
+      {StandType::UniversalAxialTorsion, "e_axial_torsion",
+       "Осевая-крутильная сервогидравлическая испытательная машина",
+       {TestOperationType::Tension, TestOperationType::Torsion,
+        TestOperationType::TensionPlusTorsion},
+       false, false, {1, 0, 1}, 14.0},
 
       {StandType::CompressionStand, "e_compression", "Стенд испытания на сжатие",
        {TestOperationType::Compression}, false, false, {1, 0, 1}, 15.0},
-
-      {StandType::TorsionMachine, "e_torsion", "Стенд испытания на кручение",
-       {TestOperationType::Torsion}, false, false, {1, 0, 1}, 12.0},
 
       {StandType::BendingRig, "e_bending", "Стенд испытания на изгиб",
        {TestOperationType::Bending}, false, false, {1, 0, 1}, 10.0},
 
       {StandType::FatigueStand, "e_fatigue", "Стенд усталостных испытаний",
        {TestOperationType::Fatigue}, true, false, {2, 2, 1}, 8.0},
-
-      {StandType::AxialTorsionRig, "e_tension_torsion",
-       "Стенд испытания на растяжение с кручением",
-       {TestOperationType::TensionPlusTorsion}, false, false, {1, 0, 1}, 14.0},
 
       {StandType::BendingTorsionRig, "e_bending_torsion",
        "Стенд испытания на изгиб с кручением",

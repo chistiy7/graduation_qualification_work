@@ -1,12 +1,16 @@
 #include "engine/layout_optimizer.hpp"
 
+#include "domain/schedule.hpp"
 #include "engine/layout_area.hpp"
-#include "engine/route_analysis.hpp"
 #include "engine/route_planner.hpp"
+#include "engine/scheduler.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -143,19 +147,15 @@ ProblemDefinition applyPlacement(const ProblemDefinition& base, const std::vecto
 }
 
 // Только слагаемые C, зависящие от координат стендов (транспорт + C_area).
+// Берём реальный T_cycle (makespan) и путь оператора из DES-расписания — те же,
+// что в MetricsEngine, чтобы выбор раскладки шёл по той же C.
 double evaluateLayoutCost(const ProblemDefinition& placed) {
     const TestRoute route = RoutePlanner{}.buildGroupedRoute(placed);
-    const RouteAnalysis analysis = RouteAnalyzer{}.analyze(placed, route);
+    const Schedule sched = Scheduler{}.build(placed, route);
 
-    double tCycle = 0.0;
-    for (const auto& e : placed.equipment) {
-        const auto it = analysis.busyMinutesByEquipment.find(e.id);
-        const double busy = it != analysis.busyMinutesByEquipment.end() ? it->second : 0.0;
-        tCycle = std::max(tCycle, busy);
-    }
-
-    const double transport = (analysis.moveTimeMin / 60.0) * placed.laborRatePerHour;
-    const double area = areaOccupancyCost(placed, tCycle);
+    const double moveMin = sched.operatorTravelSteps * placed.minutesPerGridStep;
+    const double transport = (moveMin / 60.0) * placed.laborRatePerHour;
+    const double area = areaOccupancyCost(placed, sched.makespanMin);
     return transport + area;
 }
 
@@ -211,11 +211,17 @@ bool findValidPlacement(const ProblemDefinition& base, const std::vector<Cell>& 
 
 }  // namespace
 
-LayoutOptimizationResult optimizeLayout(const ProblemDefinition& base) {
-    LayoutOptimizationResult out;
+std::optional<LayoutOptimizationResult> placeOnGrid(const ProblemDefinition& baseIn, int rows,
+                                                    int cols) {
+    ProblemDefinition base = baseIn;
+    base.gridRows = rows;
+    base.gridCols = cols;
 
-    const int rows = base.gridRows > 0 ? base.gridRows : 1;
-    const int cols = base.gridCols > 0 ? base.gridCols : 1;
+    LayoutOptimizationResult out;
+    out.gridRows = rows;
+    out.gridCols = cols;
+    out.roomAreaM2 = static_cast<double>(rows) * cols * base.gridCellSizeM * base.gridCellSizeM;
+
     const auto cells = makeCells(rows, cols);
     const int m = static_cast<int>(cells.size());
     const int k = static_cast<int>(base.equipment.size());
@@ -226,9 +232,7 @@ LayoutOptimizationResult optimizeLayout(const ProblemDefinition& base) {
         return out;
     }
     if (k > m) {
-        throw std::runtime_error("недостаточно ячеек: стендов " + std::to_string(k) +
-                                 ", ячеек " + std::to_string(m) +
-                                 " (увеличьте площадь помещения)");
+        return std::nullopt;
     }
 
     double bestCost = std::numeric_limits<double>::max();
@@ -303,9 +307,7 @@ LayoutOptimizationResult optimizeLayout(const ProblemDefinition& base) {
     }
 
     if (bestPositions.empty()) {
-        throw std::runtime_error(
-            "не удалось разместить стенды с учётом направленных зон безопасности — "
-            "увеличьте площадь помещения или уменьшите число типов испытаний");
+        return std::nullopt;
     }
 
     out.problem = applyPlacement(base, cells, bestPositions);
@@ -313,6 +315,46 @@ LayoutOptimizationResult optimizeLayout(const ProblemDefinition& base) {
     out.evaluated = evaluated;
     out.note = brute ? "полный перебор размещений" : "жадная раскладка + локальный поиск";
     return out;
+}
+
+LayoutOptimizationResult optimizeLayout(const ProblemDefinition& base) {
+    const int k = static_cast<int>(base.equipment.size());
+    if (k == 0) {
+        LayoutOptimizationResult out;
+        out.problem = base;
+        out.note = "нет стендов для размещения";
+        return out;
+    }
+
+    // Сетка задана пользователем — раскладываем на ней.
+    if (base.gridRows > 0 && base.gridCols > 0) {
+        if (auto r = placeOnGrid(base, base.gridRows, base.gridCols)) return *r;
+        throw std::runtime_error(
+            "не удалось разместить стенды с учётом направленных зон безопасности — "
+            "увеличьте площадь помещения или уменьшите число типов испытаний");
+    }
+
+    // Площадь не задана — проектируем от МИНИМАЛЬНОЙ необходимой площади:
+    // перебираем размер сетки по возрастанию числа ячеек (т.е. площади) и берём
+    // ПЕРВУЮ сетку, на которой стенды с зонами безопасности помещаются.
+    constexpr int kMaxCells = 400;  // защита от бесконечного роста
+    for (int n = k; n <= kMaxCells; ++n) {
+        // Все разложения n = rows·cols, от близких к квадрату (меньше переходов).
+        for (int rows = static_cast<int>(std::sqrt(static_cast<double>(n))); rows >= 1; --rows) {
+            if (n % rows != 0) continue;
+            const int cols = n / rows;
+            if (auto r = placeOnGrid(base, rows, cols)) {
+                r->autoArea = true;
+                r->note += " (площадь спроектирована от минимума: " + std::to_string(rows) + "×" +
+                           std::to_string(cols) + ")";
+                return *r;
+            }
+        }
+    }
+
+    throw std::runtime_error(
+        "не удалось разместить стенды даже на сетке до " + std::to_string(kMaxCells) +
+        " ячеек — слишком жёсткие зоны безопасности при " + std::to_string(k) + " стендах");
 }
 
 }  // namespace lab

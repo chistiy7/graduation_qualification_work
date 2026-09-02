@@ -10,12 +10,18 @@ namespace {
 void applyLayoutIfNeeded(ScenarioBundle& bundle, PipelineOutput& out) {
     auto& p = bundle.problem;
     if (!p.laboratory.cells().empty()) return;
-    if (p.gridRows <= 0 || p.gridCols <= 0 || p.equipment.empty()) return;
+    if (p.equipment.empty()) return;
+    // gridRows/gridCols<=0 — допустимо: режим минимальной площади (optimizeLayout
+    // сам нарастит сетку до первой допустимой раскладки).
 
     const auto layout = optimizeLayout(p);
     p = layout.problem;
     out.layoutNote = layout.note;
     out.layoutEvaluated = layout.evaluated;
+    out.autoArea = layout.autoArea;
+    out.gridRows = layout.gridRows;
+    out.gridCols = layout.gridCols;
+    out.roomAreaM2 = layout.roomAreaM2;
 }
 
 }  // namespace
@@ -34,7 +40,8 @@ PipelineOutput Pipeline::run(ScenarioBundle bundle, bool exportFiles) const {
         out.csvPath = postprocessor_.exportCsv(out.result);
     }
 
-    printRunTimeMs(timer.elapsedMs());
+    out.elapsedMs = timer.elapsedMs();
+    printRunTimeMs(out.elapsedMs);
     return out;
 }
 

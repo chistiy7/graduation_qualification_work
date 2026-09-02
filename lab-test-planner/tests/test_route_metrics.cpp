@@ -5,6 +5,7 @@
 #include "engine/program_efficiency.hpp"
 #include "engine/route_analysis.hpp"
 #include "engine/route_planner.hpp"
+#include "engine/scheduler.hpp"
 #include "engine/stand_state_matrix.hpp"
 #include "app/preprocessor.hpp"
 #include "domain/laboratory.hpp"
@@ -32,12 +33,12 @@ bool testCatalog8ProgramParams() {
         double energyKwh;
     };
     const Expected expected[] = {
-        {lab::TestOperationType::Tension, "e_tension", 20.0, 1.5, 0.50},
+        {lab::TestOperationType::Tension, "e_axial_torsion", 20.0, 1.8, 0.60},
         {lab::TestOperationType::Compression, "e_compression", 15.0, 1.5, 0.375},
-        {lab::TestOperationType::Torsion, "e_torsion", 15.0, 1.0, 0.25},
+        {lab::TestOperationType::Torsion, "e_axial_torsion", 15.0, 1.6, 0.40},
         {lab::TestOperationType::Bending, "e_bending", 15.0, 1.5, 0.375},
         {lab::TestOperationType::Fatigue, "e_fatigue", 166.7, 5.0, 13.89},
-        {lab::TestOperationType::TensionPlusTorsion, "e_tension_torsion", 30.0, 2.3, 1.15},
+        {lab::TestOperationType::TensionPlusTorsion, "e_axial_torsion", 30.0, 2.3, 1.15},
         {lab::TestOperationType::BendingPlusTorsion, "e_bending_torsion", 30.0, 2.3, 1.15},
         {lab::TestOperationType::Thermomechanical, "e_thermo_mech", 100.0, 10.0, 16.67},
     };
@@ -93,10 +94,55 @@ bool testPipelineAppliesLayoutForUserInput() {
     return true;
 }
 
+bool testPipelineMinAreaWhenAreaNotGiven() {
+    // Площадь НЕ задана (roomAreaM2 <= 0): САПР проектирует от минимальной
+    // необходимой площади — наращивает сетку до первой допустимой раскладки.
+    // Берём все виды испытаний (жёсткие зоны безопасности усталости/термомеха),
+    // которые не помещаются на тесную фиксированную сетку.
+    lab::ScenarioInput in;
+    in.roomAreaM2 = 0.0;  // сигнал режима минимальной площади
+    in.laborRatePerHour = 450.0;
+    in.energyTariffPerKwh = 6.5;
+    for (const auto t : lab::selectableTestTypes()) {
+        in.groups.push_back({1, t});
+    }
+    in.batchSize = static_cast<int>(in.groups.size());
+
+    lab::Pipeline pipeline;
+    const auto out = pipeline.runFromInput(in, false);
+
+    bool ok = true;
+    const auto& p = out.bundle.problem;
+    ok &= !p.laboratory.cells().empty();           // раскладка найдена
+    ok &= p.gridRows > 0 && p.gridCols > 0;        // сетка спроектирована
+    ok &= p.gridRows * p.gridCols >= static_cast<int>(p.equipment.size());
+    // Все стенды получили координаты (нет пустых cellId).
+    for (const auto& e : p.equipment) ok &= !e.cellId.empty();
+    ok &= out.result.metrics.C > 0.0;
+
+    // Проброс режима минимальной площади в PipelineOutput (для GUI).
+    ok &= out.autoArea;
+    ok &= out.gridRows == p.gridRows && out.gridCols == p.gridCols;
+    ok &= out.roomAreaM2 > 0.0;
+
+    // DES-расписание выбранного маршрута присутствует (источник для Ганта в GUI).
+    ok &= !out.result.schedule.phases.empty();
+    ok &= out.result.schedule.makespanMin > 0.0;
+
+    if (!ok) {
+        std::cerr << "Min-area pipeline FAILED: cells=" << p.laboratory.cells().size()
+                  << " grid=" << p.gridRows << "x" << p.gridCols
+                  << " stands=" << p.equipment.size() << " autoArea=" << out.autoArea
+                  << " phases=" << out.result.schedule.phases.size() << "\n";
+    }
+    return ok;
+}
+
 bool testSetupOnModeChange() {
     lab::ProblemDefinition p;
     lab::LabEquipment eq;
     eq.id = "e_mock";
+    eq.standType = lab::StandType::CompressionStand;  // одно-программный стенд (общий путь)
     eq.setupTimeMin = 10.0;
     eq.setupCost = 100.0;
     p.equipment.push_back(eq);
@@ -148,6 +194,174 @@ bool testSetupOnModeChange() {
     return ok;
 }
 
+bool testUniversalStandChangeover() {
+    // Универсальный осевой-крутильный стенд: матрица переналадки A→B.
+    // Группировка одинаковых программ должна давать меньшее суммарное время
+    // переналадок, чем чередование (при одинаковом числе переналадок).
+    lab::ProblemDefinition p;
+    lab::LabEquipment eq;
+    eq.id = "e_axial_torsion";
+    eq.standType = lab::StandType::UniversalAxialTorsion;
+    eq.setupTimeMin = 10.0;
+    p.equipment.push_back(eq);
+
+    lab::TestStage tension;
+    tension.id = "tension";
+    tension.operationType = lab::TestOperationType::Tension;
+    tension.durationMin = 20.0;
+    tension.programSetupTimeMin = 10.0;
+    lab::TestStage torsion;
+    torsion.id = "torsion";
+    torsion.operationType = lab::TestOperationType::Torsion;
+    torsion.durationMin = 15.0;
+    torsion.programSetupTimeMin = 10.0;
+    p.operations = {tension, torsion};
+
+    lab::TestRoute grouped;  // T T K K — группировка
+    grouped.addStep({"s1", "tension", "e_axial_torsion"});
+    grouped.addStep({"s2", "tension", "e_axial_torsion"});
+    grouped.addStep({"s3", "torsion", "e_axial_torsion"});
+    grouped.addStep({"s4", "torsion", "e_axial_torsion"});
+
+    lab::TestRoute interleaved;  // T K T K — чередование
+    interleaved.addStep({"s1", "tension", "e_axial_torsion"});
+    interleaved.addStep({"s2", "torsion", "e_axial_torsion"});
+    interleaved.addStep({"s3", "tension", "e_axial_torsion"});
+    interleaved.addStep({"s4", "torsion", "e_axial_torsion"});
+
+    const auto aGrouped = lab::RouteAnalyzer{}.analyze(p, grouped);
+    const auto aInter = lab::RouteAnalyzer{}.analyze(p, interleaved);
+    const auto mGrouped = lab::StandStateAnalyzer{}.analyze(p, grouped);
+
+    bool ok = true;
+    // N (переналадки) считает первичную установку + смену программы. Чистая смена
+    // образца (та же программа) в N не входит, но занимает время по матрице.
+    ok &= aGrouped.setupCount == 2;   // установка T + переход T→K
+    ok &= aInter.setupCount == 4;     // установка T + T→K + K→T + T→K
+    ok &= mGrouped.setupCount == aGrouped.setupCount;
+    // grouped время: 10 + 12(T→T) + 25(T→K) + 12(K→K) = 59
+    ok &= std::abs(aGrouped.setupTimeMin - 59.0) < 1e-6;
+    // interleaved время: 10 + 25 + 25 + 25 = 85
+    ok &= std::abs(aInter.setupTimeMin - 85.0) < 1e-6;
+    ok &= aGrouped.setupTimeMin < aInter.setupTimeMin;
+    // Группировка снижает и число переналадок, и фиксированную плату C_setup.
+    ok &= aGrouped.setupCount < aInter.setupCount;
+    if (!ok) {
+        std::cerr << "Universal changeover FAILED: grouped t=" << aGrouped.setupTimeMin
+                  << " N=" << aGrouped.setupCount << " interleaved t=" << aInter.setupTimeMin
+                  << " N=" << aInter.setupCount << "\n";
+    }
+    return ok;
+}
+
+bool testSchedulerAutonomousOverlap() {
+    // DES-ядро: один оператор, автономный прогон. Пока на стенде A идёт длинный
+    // прогон, оператор обслуживает короткие операции на стенде B → makespan меньше
+    // последовательной суммы фаз.
+    lab::ProblemDefinition p;
+    lab::LabEquipment a;
+    a.id = "e_fatigue";
+    a.standType = lab::StandType::FatigueStand;
+    lab::LabEquipment b;
+    b.id = "e_bending";
+    b.standType = lab::StandType::BendingRig;
+    p.equipment = {a, b};
+
+    lab::TestStage longRun;
+    longRun.id = "fatigue";
+    longRun.operationType = lab::TestOperationType::Fatigue;
+    longRun.durationMin = 100.0;
+    longRun.programSetupTimeMin = 5.0;
+    longRun.unloadTimeMin = 5.0;
+    lab::TestStage shortRun;
+    shortRun.id = "bending";
+    shortRun.operationType = lab::TestOperationType::Bending;
+    shortRun.durationMin = 10.0;
+    shortRun.programSetupTimeMin = 5.0;
+    shortRun.unloadTimeMin = 5.0;
+    p.operations = {longRun, shortRun};
+
+    lab::TestRoute order;
+    order.addStep({"s1", "fatigue", "e_fatigue"});
+    order.addStep({"s2", "bending", "e_bending"});
+    order.addStep({"s3", "bending", "e_bending"});
+
+    const auto sched = lab::Scheduler{}.build(p, order);
+
+    // Последовательная сумма фаз (без перекрытия):
+    // A: 5+100+5=110, B1: 5+10+5=20, B2: 5+10+5=20 → 150.
+    const double serialSum = 150.0;
+
+    bool ok = true;
+    ok &= sched.makespanMin > 0.0;
+    ok &= sched.makespanMin < serialSum;     // перекрытие реально сократило цикл
+    ok &= sched.operatorIdleMin >= 0.0;
+    // N=2: первичная установка усталостного + первичная установка изгиба; повторный
+    // изгиб (s3) — смена образца (та же программа), в N не входит.
+    ok &= sched.changeoverCount == 2;
+
+    // Инвариант: фазы оператора (Setup/Unload) не пересекаются между собой.
+    std::vector<const lab::ScheduledPhase*> opPhases;
+    for (const auto& ph : sched.phases) {
+        if (ph.operatorBusy) opPhases.push_back(&ph);
+    }
+    std::sort(opPhases.begin(), opPhases.end(),
+              [](const auto* x, const auto* y) { return x->startMin < y->startMin; });
+    for (size_t i = 1; i < opPhases.size(); ++i) {
+        if (opPhases[i]->startMin + 1e-9 < opPhases[i - 1]->endMin) ok = false;
+    }
+
+    // Инвариант: на каждом стенде прогоны не пересекаются, фазы упорядочены.
+    for (const auto& ph : sched.phases) {
+        if (ph.phase == lab::SchedulePhase::Run) ok &= ph.endMin > ph.startMin;
+    }
+
+    if (!ok) {
+        std::cerr << "Scheduler overlap FAILED: makespan=" << sched.makespanMin
+                  << " serial=" << serialSum << " opBusy=" << sched.operatorBusyMin
+                  << " N=" << sched.changeoverCount << "\n";
+    }
+    return ok;
+}
+
+bool testSchedulerSameStandSerialized() {
+    // Две операции на ОДНОМ стенде: прогоны не перекрываются (стенд — один ресурс).
+    lab::ProblemDefinition p;
+    lab::LabEquipment a;
+    a.id = "e_bending";
+    a.standType = lab::StandType::BendingRig;
+    p.equipment = {a};
+
+    lab::TestStage bending;
+    bending.id = "bending";
+    bending.operationType = lab::TestOperationType::Bending;
+    bending.durationMin = 20.0;
+    bending.programSetupTimeMin = 5.0;
+    bending.unloadTimeMin = 5.0;
+    p.operations = {bending};
+
+    lab::TestRoute order;
+    order.addStep({"s1", "bending", "e_bending"});
+    order.addStep({"s2", "bending", "e_bending"});
+
+    const auto sched = lab::Scheduler{}.build(p, order);
+
+    std::vector<const lab::ScheduledPhase*> runs;
+    for (const auto& ph : sched.phases) {
+        if (ph.phase == lab::SchedulePhase::Run) runs.push_back(&ph);
+    }
+    bool ok = runs.size() == 2;
+    if (ok) {
+        const lab::ScheduledPhase* first = runs[0]->startMin <= runs[1]->startMin ? runs[0] : runs[1];
+        const lab::ScheduledPhase* second = first == runs[0] ? runs[1] : runs[0];
+        ok &= second->startMin + 1e-9 >= first->endMin;  // второй прогон после первого
+        // на одном стенде N=1: одна первичная установка, дальше смена образца (та же программа)
+        ok &= sched.changeoverCount == 1;
+    }
+    if (!ok) std::cerr << "Scheduler same-stand serialization FAILED\n";
+    return ok;
+}
+
 bool testCycleTimeAndUtilization() {
     lab::ProblemDefinition p;
     p.gridCellSizeM = 2.0;
@@ -155,10 +369,12 @@ bool testCycleTimeAndUtilization() {
 
     lab::LabEquipment fast;
     fast.id = "e_tension";
+    fast.standType = lab::StandType::CompressionStand;  // одно-программный стенд
     fast.amortPerHour = 1000.0;
     fast.fundTimeMin = 480.0;
     lab::LabEquipment slow;
     slow.id = "e_thermo_mech";
+    slow.standType = lab::StandType::ThermomechanicalStand;
     slow.amortPerHour = 2000.0;
     slow.fundTimeMin = 480.0;
     p.equipment = {fast, slow};
@@ -433,8 +649,16 @@ int main() {
     std::cout << "Catalog 8 program params OK\n";
     if (!testPipelineAppliesLayoutForUserInput()) return EXIT_FAILURE;
     std::cout << "Pipeline layout for user input OK\n";
+    if (!testPipelineMinAreaWhenAreaNotGiven()) return EXIT_FAILURE;
+    std::cout << "Min-area design when area not given OK\n";
     if (!testSetupOnModeChange()) return EXIT_FAILURE;
     std::cout << "Setup mode-change OK\n";
+    if (!testUniversalStandChangeover()) return EXIT_FAILURE;
+    std::cout << "Universal stand changeover matrix OK\n";
+    if (!testSchedulerAutonomousOverlap()) return EXIT_FAILURE;
+    std::cout << "Scheduler autonomous overlap OK\n";
+    if (!testSchedulerSameStandSerialized()) return EXIT_FAILURE;
+    std::cout << "Scheduler same-stand serialization OK\n";
     if (!testCycleTimeAndUtilization()) return EXIT_FAILURE;
     std::cout << "Cycle time and utilization OK\n";
     if (!testValidIndependentSpecimens()) return EXIT_FAILURE;

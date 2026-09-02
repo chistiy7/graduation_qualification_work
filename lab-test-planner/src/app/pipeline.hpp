@@ -18,6 +18,12 @@ struct PipelineOutput {
     std::filesystem::path csvPath;
     std::string layoutNote;
     long long layoutEvaluated = 0;
+    // Раскладка: режим минимальной площади (площадь не задавалась) и итоговая сетка.
+    bool autoArea = false;
+    int gridRows = 0;
+    int gridCols = 0;
+    double roomAreaM2 = 0.0;
+    double elapsedMs = -1.0;
 };
 
 // Связка: размещение (если нужно) → препроцессор → ядро → постпроцессор

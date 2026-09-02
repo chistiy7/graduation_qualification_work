@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/schedule.hpp"
 #include "engine/metrics.hpp"
 #include "engine/program_efficiency.hpp"
 #include "engine/route_planner.hpp"
@@ -11,11 +12,13 @@
 
 namespace lab {
 
-// Единый оптимальный план: маршрут испытаний и его показатели/себестоимость
+// Единый рациональный план: маршрут испытаний, его показатели/себестоимость и
+// DES-расписание выбранного маршрута (таймлайн фаз для диаграммы Ганта в GUI).
 struct PlanResult {
     TestRoute route;
     VariantMetrics metrics;
     ProgramEfficiencyMetrics efficiency;
+    Schedule schedule;  // расписание выбранного маршрута (фазы Setup/Run/Unload)
     std::string orderingNote;
     std::vector<std::string> energyWarnings;  // t_norm < t_load_min
 };

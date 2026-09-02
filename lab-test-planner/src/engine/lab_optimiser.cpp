@@ -1,6 +1,7 @@
 #include "engine/lab_optimiser.hpp"
 
 #include "engine/layout_area.hpp"
+#include "engine/scheduler.hpp"
 
 #include <cctype>
 #include <iomanip>
@@ -120,6 +121,8 @@ PlanResult LabOptimiser::plan(const ProblemDefinition& problem) const {
         }
     }
     r.efficiency = ProgramEfficiencyEngine{}.compute(problem, r.route);
+    // DES-расписание выбранного маршрута: таймлайн фаз для диаграммы Ганта (GUI).
+    r.schedule = Scheduler{}.build(problem, r.route);
     return r;
 }
 

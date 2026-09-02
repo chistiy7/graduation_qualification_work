@@ -22,8 +22,6 @@ std::filesystem::path detectRoot() {
 
 std::filesystem::path projectRoot() { return detectRoot(); }
 
-std::filesystem::path resourcesDir() { return projectRoot() / "resources"; }
-
 std::filesystem::path dataDir() { return projectRoot() / "data" / "scenarios"; }
 
 std::filesystem::path outputDir() {

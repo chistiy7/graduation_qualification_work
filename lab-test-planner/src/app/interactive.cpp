@@ -1,8 +1,6 @@
 #include "app/interactive.hpp"
 
-#include "app/pipeline.hpp"
-#include "engine/lab_optimiser.hpp"
-#include "engine/layout_map.hpp"
+#include "app/scenario_runner.hpp"
 #include "model/scenario_input.hpp"
 
 #include <iostream>
@@ -47,6 +45,38 @@ double requirePositiveDouble(const std::string& prompt) {
         }
         if (val <= 0.0) {
             std::cout << "  ! Число должно быть больше нуля.\n";
+            continue;
+        }
+        return val;
+    }
+}
+
+// Площадь помещения: положительное число ЛИБО Enter — режим минимальной площади
+// (САПР сам спроектирует сетку от минимально необходимой). Возвращает 0.0 для авто.
+double askRoomAreaOrAuto() {
+    while (true) {
+        std::cout << "Площадь помещения, м² [Enter — спроектировать от минимума]: ";
+        std::string line;
+        readLine(line);
+        if (line.empty()) {
+            std::cout << "  → площадь не задана: будет спроектирована от минимально "
+                         "необходимой.\n";
+            return 0.0;
+        }
+        double val = 0.0;
+        try {
+            size_t pos = 0;
+            val = std::stod(line, &pos);
+            if (pos != line.size()) {
+                std::cout << "  ! Введите число без лишних символов.\n";
+                continue;
+            }
+        } catch (...) {
+            std::cout << "  ! Не удалось распознать число. Попробуйте ещё раз.\n";
+            continue;
+        }
+        if (val <= 0.0) {
+            std::cout << "  ! Площадь должна быть больше нуля (или Enter — авто).\n";
             continue;
         }
         return val;
@@ -182,7 +212,7 @@ int runInteractive() {
 
     ScenarioInput in;
 
-    in.roomAreaM2 = requirePositiveDouble("Площадь помещения, м²");
+    in.roomAreaM2 = askRoomAreaOrAuto();
     // cellSizeM = 2.0 — унифицированный размер стенда, не запрашивается
     in.batchSize = requireInt("Общее число образцов в партии", 1,
                               std::numeric_limits<int>::max() / 2);
@@ -196,25 +226,10 @@ int runInteractive() {
     in.groups = askSpecimenGroups(in.batchSize);
 
     try {
-        const int rows = gridRowsFromInput(in);
-        const int cols = gridColsFromInput(in);
-        const int cells = rows * cols;
-        std::cout << "\nСетка помещения: " << rows << " × " << cols << " = " << cells
-                  << " ячеек (ячейка 2×2 м, стенд = 1 ячейка).\n";
-        std::cout << "Запретная зона вокруг каждого стенда: 1 ячейка.\n";
+        std::cout << formatGridSetupNote(in) << "\n";
 
-        Pipeline pipeline;
-        const auto out = pipeline.runFromInput(in);
-
-        std::cout << "\n" << LabOptimiser::formatReport(out.result, out.bundle.problem);
-        if (out.layoutEvaluated > 0) {
-            std::cout << "\nРазмещение: " << out.layoutNote << " (вариантов просмотрено: "
-                      << out.layoutEvaluated << ")\n";
-        }
-        std::cout << "\n"
-                  << renderLayoutMatrix(out.bundle.problem, out.result.route,
-                                        out.result.metrics.T_cycle);
-        std::cout << "\nОтчёт: " << out.reportPath << "\nCSV: " << out.csvPath << "\n";
+        const auto out = runUserScenario(in);
+        std::cout << "\n" << formatScenarioRunOutput(out, &in);
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "\nОшибка: " << ex.what() << "\n";
